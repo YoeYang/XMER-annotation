@@ -18,6 +18,12 @@ export const PHASE_LABELS: Record<Phase, string> = {
   completed: "本轮已完成",
   error: "加载或播放失败",
 };
+export function resolveAssetPath(path: string): string {
+  const base = import.meta.env.BASE_URL;
+  return base.endsWith("/")
+    ? base + path.replace(/^\//, "")
+    : base + "/" + path.replace(/^\//, "");
+}
 export function formatTime(seconds: number) {
   const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
   return (

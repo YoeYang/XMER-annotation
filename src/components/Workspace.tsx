@@ -98,6 +98,7 @@ export default function Workspace(props: Props) {
       </div>
       <div className="annotation-grid">
         <MediaPanel
+          key={task.task_id}
           task={task}
           session={session}
           view={view}

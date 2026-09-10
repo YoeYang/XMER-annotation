@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { IndexedDbRepository } from "./storage/indexedDbRepository";
 import { validateTasks } from "./core/textTimeline";
+import { resolveAssetPath } from "./config";
 import type { AnnotationSession } from "./core/session";
 import type { Attempt, Submission, Task } from "./types";
 import TaskSidebar from "./components/TaskSidebar";
@@ -79,7 +80,7 @@ export default function App() {
     setReady(false);
     void (async () => {
       try {
-        const response = await fetch("/tasks.json");
+        const response = await fetch(resolveAssetPath("/tasks.json"));
         if (!response.ok)
           throw new Error("样本目录加载失败，请检查 tasks.json");
         const list = validateTasks(await response.json());

@@ -192,7 +192,7 @@ task_id、annotator_id、modality、media_id、attempt_id、sample_index、media
 
 ## 与 `04-conflict-sampling` 的关系（2026-09-10 补，接手方必读）
 
-**本目录（`XMER/05-annotation/`）通过 `git clone` 自 GitHub `YoeYang/XMER-annotation` 同步而来，是新连续 Valence–Arousal 标注项目在 Roihu 上的代码副本；实际开发在本地 `D:\anaconda\envs\xmer-annotation`，改动需从本地重新 push/pull 同步，Roihu 上不直接开发。**
+**本目录（`XMER/05-annotation/`）通过 `git clone` 自 GitHub `YoeYang/XMER-annotation` 同步而来，是新连续 Valence–Arousal 标注项目在 Roihu 上的代码副本；日常开发仍以本地 `D:\anaconda\envs\xmer-annotation` 为主。2026-09-10 起用户明确允许在 Roihu 上直接改动并 commit（部署/取真实样本这类需要 HPC 侧资源的工作），push 到 GitHub 的时机由用户后续指示，不必每次自动同步。**
 
 - **本项目取代什么**：`../04-conflict-sampling/coding_scheme_annotation_platform_archive/` 里的 Label Studio 离散 behavior-cue 标注平台已就绪但**没有正式开标**，标注方式改为本项目的连续二维坐标采集。LS 平台**不废弃**，只是暂停，按其 `handover.md` §1 复活清单可随时接回去。
 - **样本从哪来**：待标素材直接复用 `../04-conflict-sampling/0-conflict_sample_selection/data/` 里已筛好的：
@@ -201,4 +201,26 @@ task_id、annotator_id、modality、media_id、attempt_id、sample_index、media
   - 这两份 `.meta.*` 里已 join 好视频路径、转录、GT sentiment、双 judge（Gemini/GPT-5.6-luna）判定结果，接入 V2 时直接读这些字段即可，不需要重新跑筛选流水线。
   - 素材视频编码问题（308 条 chsims/mustard 编码或无音轨）已在 LS 平台阶段修复过，见该 handover §"视频兼容性修复"；若本项目独立取用原始视频，需要同样注意 mustard 无音轨（音频在同目录 `audio.wav`）。
 - **CPM 四维打分**（appraisal theory R/I/C/N）：两边一致同意暂不做，留到主标注完成后由内部受训人员在子集上补做，与本项目无直接关系。
-- **不复用的部分**：LS 的账号体系、组织隔离方案、阿里云 ECS 部署，均是 LS 专用，本项目 V2 云端部署另起。
+- **不复用的部分**：LS 的账号体系、组织隔离方案，是 LS 专用；阿里云 ECS **实例本身现已复用**（见下方 2026-09-10 部署记录），但服务/容器/数据完全独立。
+
+---
+
+## 2026-09-10（续）— 真实样本 example 集 + 部署上线
+
+**背景**：用户要求跳过手机适配（暂不需要），并把网站推送到云端；示例素材改用 04 筛好的真实冲突样本，而非合成 demo。
+
+**新增真实样本集**（`EXAMPLE-001..004`，`demo:false`）：取 `annotation_pool_3500` 里 `meld_dia11_utt9`（MELD，Phoebe，双 judge 高置信度冲突：text/audio=happy vs video=angry），做成 visual/audio/text/audiovisual 四个单任务，供逐模态对比标注。素材处理（Roihu，`module load ffmpeg/7.1`）：
+- 原视频已是 h264/aac，**未重编码**，只 stream copy；音轨从 6 声道(5.1)降混为双声道。
+- `visual.mp4`＝去音轨；`audio.wav`＝双声道 PCM；`audiovisual.mp4`＝原始有声版。
+- **转录无逐词时间戳**：`public/transcripts/example.json` 的词级时间按字符数在句子时长内近似匀速分配，写了 `alignment_note` 字段说明不是真实语音对齐，仅用于逐词出现的展示节奏。
+
+**部署上线**（**复用 04 的阿里云香港 ECS，同一台机器**，不新开服务器）：
+- 访问地址：**https://47.238.255.165.nip.io/annotation/**
+- 做法与 `../04-conflict-sampling/coding_scheme_annotation_platform_archive/` 的 `/training/` 静态页同一模式：Caddy `handle_path /annotation* { root * /annotation-static; file_server }`，静态文件由 Docker compose 只读挂载进 caddy 容器（`./annotation-static:/annotation-static:ro`）。**不影响 LS / Postgres / training 页**（部署后已逐一 curl 验证 200）。
+- **构建方式**：ECS 上没长期装 Node，用一次性容器 `docker run --rm node:20-alpine sh -c "npm ci && npm run build"`（源码先从 Roihu `rsync` 到 ECS `/opt/xmer-annotation-src/`，构建产物 `dist/` 再 rsync 进 `/opt/xmer-label/annotation-static/`）。
+- **踩坑**：Vite 默认打包成绝对路径 `/assets/...`，被 `/annotation*` 前缀剥离后请求打到根路径的 LS 服务，404。**修法**：`vite.config.ts` 加 `base: process.env.VITE_BASE_PATH ?? "/"`（本地开发默认 `/` 不受影响），ECS 构建时传 `VITE_BASE_PATH=/annotation/`。
+- 改动的 ECS 文件（均已备份 `.bak-preannotation`）：`/opt/xmer-label/Caddyfile`、`/opt/xmer-label/docker-compose.yml`（给 caddy 服务加一行只读挂载）。源码副本留在 `/opt/xmer-annotation-src/`，之后有新 commit 需要重新 rsync + 容器构建 + rsync 到 static 目录 + 不需要重启 caddy（静态文件是 bind mount，直接生效；只有 Caddyfile/compose 改动才需要 `docker compose up -d caddy`）。
+
+**Git 身份说明**：Roihu 本地此仓库此前从未配置 git identity，已**仅在本仓库范围**（非 `--global`）设置 `user.email=yyyueyi@outlook.com`。**用户拍板**：Roihu 上可以直接改并 commit，**不必每次都 push 到 GitHub 或同步回本地**，push 时机由用户后续明确指示。当前 Roihu 本地领先 GitHub 一个 commit（`4c12913`），尚未 push。
+
+**当前 tasks.json 状态**：4 个 demo 任务（合成素材）+ 4 个 EXAMPLE 真实样本任务共存，均可在线上直接看到。之后接入 3500 池全量时按同一 schema 扩展 `tasks.json` 即可。

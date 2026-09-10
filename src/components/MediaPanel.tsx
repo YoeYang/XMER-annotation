@@ -13,6 +13,7 @@ import {
   MODALITY_LABELS,
   PHASE_LABELS,
   PLAYBACK_RATES,
+  resolveAssetPath,
 } from "../config";
 import type { SessionView, Task, Transcript } from "../types";
 import { silentWav, textAt, validateTranscript } from "../core/textTimeline";
@@ -26,7 +27,7 @@ interface Props {
 export default function MediaPanel({ task, session, view, onReload }: Props) {
   const element = useRef<HTMLMediaElement | null>(null);
   const [source, setSource] = useState(
-    task.modality === "text" ? "" : task.src,
+    task.modality === "text" ? "" : resolveAssetPath(task.src),
   );
   const [transcript, setTranscript] = useState<Transcript | null>(null);
   useEffect(() => {
@@ -35,7 +36,9 @@ export default function MediaPanel({ task, session, view, onReload }: Props) {
     let objectUrl = "";
     void (async () => {
       try {
-        const response = await fetch(task.src, { signal: controller.signal });
+        const response = await fetch(resolveAssetPath(task.src), {
+          signal: controller.signal,
+        });
         if (!response.ok) throw new Error("文本文件加载失败");
         const data = validateTranscript(await response.json(), task.duration);
         if (controller.signal.aborted) return;
