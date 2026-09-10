@@ -225,3 +225,17 @@ task_id、annotator_id、modality、media_id、attempt_id、sample_index、media
 **Git 身份说明**：Roihu 本地此仓库此前从未配置 git identity，已**仅在本仓库范围**（非 `--global`）设置 `user.email=yyyueyi@outlook.com`。**用户拍板**：Roihu 上可以直接改并 commit，**不必每次都 push 到 GitHub 或同步回本地**，push 时机由用户后续明确指示。当前 Roihu 本地领先 GitHub 一个 commit（`4c12913`），尚未 push。
 
 **当前 tasks.json 状态**：4 个 demo 任务（合成素材）+ 4 个 EXAMPLE 真实样本任务共存，均可在线上直接看到。之后接入 3500 池全量时按同一 schema 扩展 `tasks.json` 即可。
+
+---
+
+## 2026-09-10（续 2）— UI 四项改动（完整视频优先 / 配色 / 侧栏分组 / 曲线图）
+
+用户四条改动（手机版明确不做）：
+
+1. **完整视频排最前**：每个样本内模态顺序 `完整视频 → 仅视觉 → 仅音频 → 仅文本`（先看完整视频在多人场景里确定说话主体）。`tasks.json` 重排，侧栏也强制此序，**默认选中项现在是完整视频**。模态排序常量 `MODALITY_ORDER` 在 `TaskSidebar.tsx`。
+2. **标注方形配色+标签**（`AnnotationPad.tsx` + `styles.css`）：左半冷色蓝（负 valence）、右半暖色橙（正），每半上深（高唤醒）下浅（平静）。valence 标签移到左右两侧（左"负面"/右"正面"），arousal 标签上"激动"/下"平静"。删掉四角象限标签和旧的底部/低唤醒轴行。中心十字线颜色改白色半透明以适配新底色。
+3. **侧栏分组下拉**（`TaskSidebar.tsx` 重写 + `styles.css`）：按 `source_id` 分组，一样本一行可折叠；展开显示 4 个模态子项，**统一用模态名**（完整视频/仅视觉/仅音频/仅文本），不再显示 demo 的诗意标题。已提交子项打勾，样本头显示 `n/4` 进度、全做完打勾。筛选（全部/待完成/已提交）作用在模态子项层级。默认展开当前选中任务所在的样本组。
+4. **情感曲线图**（`scripts/plot_va_curves.py`，独立分析脚本，不属 app）：读 V-A 完整导出，x=时间、y=valence（上正下负），**arousal 编码为 valence 中心线上下填充带的宽度**（越宽越激动，用户拍板此方案，非线条粗细）。产三张：三单模态 / 完整视频 / 四合一。Roihu 无中文字体，轴标用英文。已用 A001 标的 meld_dia11_utt9 四模态生成过样图。
+
+**验证**：`tsc --noEmit` 过、vitest 17/17 过、线上构建 index/JS/CSS/tasks.json/media 全 200。
+**⚠️ 未验证 / 待办**：Playwright e2e（`tests/annotation.spec.ts`）**必然失效且未修**——① Roihu 无浏览器跑不了；② 用例强依赖旧扁平侧栏（按标题 `/光影之间/` 等选任务）和"默认任务=视觉 demo"，都被本次改动打破（现在按模态名选、要先展开分组、默认=完整视频；`无效媒体`那条 abort 的是 `visual.mp4` 但默认任务已换成 audiovisual）。**UI 设计定稿后需在本地 dev 环境重写并跑这些 e2e。**
