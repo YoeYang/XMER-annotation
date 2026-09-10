@@ -239,3 +239,47 @@ task_id、annotator_id、modality、media_id、attempt_id、sample_index、media
 
 **验证**：`tsc --noEmit` 过、vitest 17/17 过、线上构建 index/JS/CSS/tasks.json/media 全 200。
 **⚠️ 未验证 / 待办**：Playwright e2e（`tests/annotation.spec.ts`）**必然失效且未修**——① Roihu 无浏览器跑不了；② 用例强依赖旧扁平侧栏（按标题 `/光影之间/` 等选任务）和"默认任务=视觉 demo"，都被本次改动打破（现在按模态名选、要先展开分组、默认=完整视频；`无效媒体`那条 abort 的是 `visual.mp4` 但默认任务已换成 audiovisual）。**UI 设计定稿后需在本地 dev 环境重写并跑这些 e2e。**
+
+---
+
+## 2026-09-10 收尾 — 当前状态 + 下一步计划
+
+### 存储架构现状（重要，别误会）
+标注结果目前**只存在标注者本地浏览器的 IndexedDB**（`storage:"local"`），**云端没有任何标注数据**。ECS 上只托管前端静态文件 + 示例视频，不接收结果。换设备/换浏览器/清站点数据都会丢，唯一备份手段是页面"导出 JSON"。这是 V1 的过渡设计，云端保存是 V2 的核心目标（未开始）。
+
+### 本次 session 落盘的 commit（Roihu 本地，均已 commit）
+```
+87d5e7f docs: 记录四项 UI/plot 改动 + e2e 待更新
+f1f2205 feat: 完整视频优先 / 冷暖 V-A 方形 / 侧栏分组 / V-A 曲线脚本
+057e871 docs: 子路径部署路径解析踩坑
+c5f9986 fix: 运行时请求路径按 BASE_URL 解析（修"样本目录加载失败"）
+4c12913 feat: 真实冲突样本 example 集 + 部署构建配置
+b226ee6 feat: initialize XMER annotation V1  ← GitHub 上只有这一个
+```
+GitHub `YoeYang/XMER-annotation` 目前**只有 b226ee6**；上面 5 个 commit 待 push（Roihu 无 GitHub 凭证，需用户本地 push，命令见下）。
+
+### 下一步计划（按优先级）
+
+**P0 — V2 云端后端（把标注真正存到服务器）**
+- 技术选型建议：FastAPI + Postgres，**复用同一台 ECS**（Postgres 容器已在跑，可加个库/schema；Caddy 加 `/annotation/api/*` 反代到后端容器）。
+- `AnnotationRepository` 接口已抽象（`src/storage/repository.ts`），V2 加一个 `HttpRepository` 实现即可，前端改动小。
+- 后端需覆盖 handover 里列的验收点：草稿自动保存、Submit/Update 版本链不覆盖历史、标注者独立网址、跨设备恢复、管理员汇总、断网重试、重复提交去重。
+
+**P1 — 接入真实标注池**
+- 现在只有 4 demo + 4 example（1 个样本）。要把 `04-conflict-sampling/0-conflict_sample_selection/data/annotation_pool_3500`（+500 锚点）批量转成 tasks.json 条目：每样本×4 模态，视频按 example 同法预处理（stereo aac、去音轨出 visual、mustard 合 audio.wav），转录时间戳方案待定（见下）。
+- 素材上线前必做全量 ffprobe 扫编码 + 查音轨（04 平台踩过 308 条坑）。
+
+**P2 — 待用户定的口径问题**（handover"尚待决定"里的）
+- 采样频率 10/20 Hz；点击后是否先练习点击；多 attempt 取哪次；文本逐词时间戳来源（人工/字幕/强制对齐——example 用的是近似匀速，正式标注需定方案）。
+
+**P3 — 工程收尾**
+- Playwright e2e 重写并在本地 dev 环境跑绿（本次未做，见上一段）。
+- 曲线图中文字体（要中文版需提供 ttf/otf）。
+- 曲线脚本可考虑并入 app 或做成分析工具目录。
+
+### push 到 GitHub 的命令（用户本地或在能访问 GitHub 的机器上跑）
+```bash
+# 方式 A：在 Roihu 上用 ! 前缀跑（需带 token 的 remote 或 gh auth）
+git -C /scratch/project_2017416/yyy2026/XMER/05-annotation push origin main
+# 方式 B：本地已 clone 的仓库里 pull 不适用（Roihu 领先），直接从 Roihu 这份 push 最省事
+```
