@@ -1,0 +1,50 @@
+[
+  {
+    "task_id": "DEMO-001",
+    "media_id": "demo-visual",
+    "source_id": "demo-synthetic-01",
+    "title": "光影之间",
+    "modality": "visual",
+    "src": "/media/visual.mp4",
+    "duration": 12,
+    "target": "演示素材：抽象画面、合成音与示例文本，仅用于熟悉操作；正式任务请替换为目标人物材料。",
+    "demo": true,
+    "timeline_origin": 0
+  },
+  {
+    "task_id": "DEMO-002",
+    "media_id": "demo-audio",
+    "source_id": "demo-synthetic-01",
+    "title": "听见变化",
+    "modality": "audio",
+    "src": "/media/audio.wav",
+    "duration": 12,
+    "target": "演示素材：抽象画面、合成音与示例文本，仅用于熟悉操作；正式任务请替换为目标人物材料。",
+    "demo": true,
+    "timeline_origin": 0
+  },
+  {
+    "task_id": "DEMO-003",
+    "media_id": "demo-text",
+    "source_id": "demo-synthetic-01",
+    "title": "字里行间",
+    "modality": "text",
+    "src": "/transcripts/demo.json",
+    "duration": 12,
+    "target": "演示素材：抽象画面、合成音与示例文本，仅用于熟悉操作；正式任务请替换为目标人物材料。",
+    "demo": true,
+    "timeline_origin": 0
+  },
+  {
+    "task_id": "DEMO-004",
+    "media_id": "demo-audiovisual",
+    "source_id": "demo-synthetic-01",
+    "title": "声音与画面",
+    "modality": "audiovisual",
+    "src": "/media/audiovisual.mp4",
+    "duration": 12,
+    "target": "演示素材：抽象画面、合成音与示例文本，仅用于熟悉操作；正式任务请替换为目标人物材料。",
+    "demo": true,
+    "timeline_origin": 0
+  }
+]
