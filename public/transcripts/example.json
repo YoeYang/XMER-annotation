@@ -1,0 +1,83 @@
+{
+  "duration": 6.715,
+  "sentences": [
+    {
+      "start": 0.3,
+      "end": 2.47,
+      "tokens": [
+        {
+          "start": 0.3,
+          "end": 0.61,
+          "text": "Oh, "
+        },
+        {
+          "start": 0.69,
+          "end": 0.9,
+          "text": "do "
+        },
+        {
+          "start": 0.98,
+          "end": 1.29,
+          "text": "you "
+        },
+        {
+          "start": 1.37,
+          "end": 1.79,
+          "text": "need "
+        },
+        {
+          "start": 1.87,
+          "end": 1.97,
+          "text": "a "
+        },
+        {
+          "start": 2.05,
+          "end": 2.47,
+          "text": "hug?"
+        }
+      ]
+    },
+    {
+      "start": 2.87,
+      "end": 6.41,
+      "tokens": [
+        {
+          "start": 2.87,
+          "end": 3.17,
+          "text": "You "
+        },
+        {
+          "start": 3.25,
+          "end": 3.77,
+          "text": "don’t "
+        },
+        {
+          "start": 3.85,
+          "end": 4.25,
+          "text": "have "
+        },
+        {
+          "start": 4.33,
+          "end": 4.54,
+          "text": "to "
+        },
+        {
+          "start": 4.62,
+          "end": 5.13,
+          "text": "bring "
+        },
+        {
+          "start": 5.21,
+          "end": 5.41,
+          "text": "me "
+        },
+        {
+          "start": 5.49,
+          "end": 6.41,
+          "text": "anything!"
+        }
+      ]
+    }
+  ],
+  "alignment_note": "approximate word timing derived from character-length proportion within the utterance duration; not true forced-alignment to speech."
+}

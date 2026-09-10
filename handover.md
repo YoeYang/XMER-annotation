@@ -187,3 +187,18 @@ task_id、annotator_id、modality、media_id、attempt_id、sample_index、media
 3. 正式实验采用 10 Hz、20 Hz 还是其他采样频率。
 4. 标注者点击方形后是否立即开始正式记录，还是先允许一次练习点击。
 5. 多次尝试最终采用最后一次、研究者选择的一次，还是保留所有尝试进行质量分析。
+
+---
+
+## 与 `04-conflict-sampling` 的关系（2026-09-10 补，接手方必读）
+
+**本目录（`XMER/05-annotation/`）通过 `git clone` 自 GitHub `YoeYang/XMER-annotation` 同步而来，是新连续 Valence–Arousal 标注项目在 Roihu 上的代码副本；实际开发在本地 `D:\anaconda\envs\xmer-annotation`，改动需从本地重新 push/pull 同步，Roihu 上不直接开发。**
+
+- **本项目取代什么**：`../04-conflict-sampling/coding_scheme_annotation_platform_archive/` 里的 Label Studio 离散 behavior-cue 标注平台已就绪但**没有正式开标**，标注方式改为本项目的连续二维坐标采集。LS 平台**不废弃**，只是暂停，按其 `handover.md` §1 复活清单可随时接回去。
+- **样本从哪来**：待标素材直接复用 `../04-conflict-sampling/0-conflict_sample_selection/data/` 里已筛好的：
+  - `annotation_pool_3500.jsonl`（+ `.meta.jsonl/.meta.csv`）—— 主标注池，3500 条
+  - `anchor_set_500.jsonl`（+ `.meta.jsonl/.meta.csv`）—— 锚点集，500 条
+  - 这两份 `.meta.*` 里已 join 好视频路径、转录、GT sentiment、双 judge（Gemini/GPT-5.6-luna）判定结果，接入 V2 时直接读这些字段即可，不需要重新跑筛选流水线。
+  - 素材视频编码问题（308 条 chsims/mustard 编码或无音轨）已在 LS 平台阶段修复过，见该 handover §"视频兼容性修复"；若本项目独立取用原始视频，需要同样注意 mustard 无音轨（音频在同目录 `audio.wav`）。
+- **CPM 四维打分**（appraisal theory R/I/C/N）：两边一致同意暂不做，留到主标注完成后由内部受训人员在子集上补做，与本项目无直接关系。
+- **不复用的部分**：LS 的账号体系、组织隔离方案、阿里云 ECS 部署，均是 LS 专用，本项目 V2 云端部署另起。
