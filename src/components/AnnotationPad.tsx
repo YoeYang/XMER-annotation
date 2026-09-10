@@ -34,12 +34,17 @@ export default function AnnotationPad({ view, onStart, onMove }: Props) {
         根据目标人物当前的情感状态，连续移动光标。
       </p>
       <div className="pad-frame">
-        <div className="axis-top">
-          高唤醒 <span>AROUSAL +</span>
+        <div className="axis-arousal top">
+          激动 <small>high arousal</small>
         </div>
-        <div
-          className="pad"
-          role="button"
+        <div className="pad-row">
+          <div className="axis-valence left">
+            负面
+            <small>negative</small>
+          </div>
+          <div
+            className="pad"
+            role="button"
           tabIndex={disabled ? -1 : 0}
           aria-label="二维情绪标注区域"
           aria-disabled={disabled}
@@ -93,34 +98,30 @@ export default function AnnotationPad({ view, onStart, onMove }: Props) {
               });
             }
           }}
-        >
-          <span className="quadrant top-left">负面 · 高唤醒</span>
-          <span className="quadrant top-right">正面 · 高唤醒</span>
-          <span className="quadrant bottom-left">负面 · 低唤醒</span>
-          <span className="quadrant bottom-right">正面 · 低唤醒</span>
-          <span className="cross horizontal" />
-          <span className="cross vertical" />
-          <span
-            className={"cursor-point " + (view.point ? "selected" : "")}
-            style={{
-              left: ((position.valence + 1) / 2) * 100 + "%",
-              top: ((1 - position.arousal) / 2) * 100 + "%",
-            }}
-          />
-          {canStart && !disabled && (
-            <span className="start-hint">
-              <MousePointer2 size={16} />
-              点击任意位置开始
-            </span>
-          )}
+          >
+            <span className="cross horizontal" />
+            <span className="cross vertical" />
+            <span
+              className={"cursor-point " + (view.point ? "selected" : "")}
+              style={{
+                left: ((position.valence + 1) / 2) * 100 + "%",
+                top: ((1 - position.arousal) / 2) * 100 + "%",
+              }}
+            />
+            {canStart && !disabled && (
+              <span className="start-hint">
+                <MousePointer2 size={16} />
+                点击任意位置开始
+              </span>
+            )}
+          </div>
+          <div className="axis-valence right">
+            正面
+            <small>positive</small>
+          </div>
         </div>
-        <div className="axis-bottom">
-          <span>负面 −</span>
-          <span>VALENCE</span>
-          <span>+ 正面</span>
-        </div>
-        <div className="axis-low">
-          低唤醒 <span>AROUSAL −</span>
+        <div className="axis-arousal low">
+          平静 <small>low arousal</small>
         </div>
       </div>
       <div className="coordinate-values">

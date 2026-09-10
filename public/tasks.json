@@ -1,5 +1,17 @@
 [
   {
+    "task_id": "DEMO-004",
+    "media_id": "demo-audiovisual",
+    "source_id": "demo-synthetic-01",
+    "title": "声音与画面",
+    "modality": "audiovisual",
+    "src": "/media/audiovisual.mp4",
+    "duration": 12,
+    "target": "演示素材：抽象画面、合成音与示例文本，仅用于熟悉操作；正式任务请替换为目标人物材料。",
+    "demo": true,
+    "timeline_origin": 0
+  },
+  {
     "task_id": "DEMO-001",
     "media_id": "demo-visual",
     "source_id": "demo-synthetic-01",
@@ -36,15 +48,15 @@
     "timeline_origin": 0
   },
   {
-    "task_id": "DEMO-004",
-    "media_id": "demo-audiovisual",
-    "source_id": "demo-synthetic-01",
-    "title": "声音与画面",
+    "task_id": "EXAMPLE-004",
+    "media_id": "example-audiovisual",
+    "source_id": "meld_dia11_utt9",
+    "title": "真实样本 · 完整视频",
     "modality": "audiovisual",
-    "src": "/media/audiovisual.mp4",
-    "duration": 12,
-    "target": "演示素材：抽象画面、合成音与示例文本，仅用于熟悉操作；正式任务请替换为目标人物材料。",
-    "demo": true,
+    "src": "/media/example/audiovisual.mp4",
+    "duration": 6.715,
+    "target": "同一真实样本的完整原始片段（画面+语气+台词同时呈现）。先看完整视频确定多人场景中的说话主体，再做三个单模态任务。",
+    "demo": false,
     "timeline_origin": 0
   },
   {
@@ -80,18 +92,6 @@
     "src": "/transcripts/example.json",
     "duration": 6.715,
     "target": "同一真实样本，仅看逐句转录文字。⚠️ 该数据集无逐词语音对齐标注，词级时间戳为按字符数在句子时长内的近似匀速分配，仅用于逐词出现的展示节奏，不代表真实发音时刻。",
-    "demo": false,
-    "timeline_origin": 0
-  },
-  {
-    "task_id": "EXAMPLE-004",
-    "media_id": "example-audiovisual",
-    "source_id": "meld_dia11_utt9",
-    "title": "真实样本 · 完整视频",
-    "modality": "audiovisual",
-    "src": "/media/example/audiovisual.mp4",
-    "duration": 6.715,
-    "target": "同一真实样本的完整原始片段（画面+语气+台词同时呈现），用于与前三个单模态任务的标注结果对照。",
     "demo": false,
     "timeline_origin": 0
   }
