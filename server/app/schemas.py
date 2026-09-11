@@ -48,8 +48,11 @@ class AttemptIn(BaseModel):
 
 
 class AttemptOut(BaseModel):
+    """字段与前端 `Attempt` 类型一一对应，供跨设备恢复时直接还原。"""
+
     model_config = ConfigDict(from_attributes=True)
 
+    schema_version: Literal[1] = 1
     attempt_id: str
     task_id: str
     annotator_id: str
@@ -57,11 +60,14 @@ class AttemptOut(BaseModel):
     modality: str
     mode: str
     status: str
+    task_snapshot: dict[str, Any]
     sample_rate_hz: int
     started_at: UtcDateTime
     completed_at: UtcDateTime | None
     sample_count: int
     last_media_time: float
+    events: list[dict[str, Any]]
+    calibration: None = None
 
 
 class ChunkIn(BaseModel):

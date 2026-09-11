@@ -75,7 +75,7 @@ export interface Submission {
 export interface ExportData {
   schema_version: 1;
   exported_at: string;
-  storage: "local";
+  storage: "local" | "cloud";
   annotator_id: string;
   unsaved_attempt_ids: string[];
   attempts: (Attempt & { samples: Sample[] })[];

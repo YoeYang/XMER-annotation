@@ -332,3 +332,52 @@ def test_timestamps_always_carry_timezone(client: TestClient, assigned):
         export["submissions"][0]["submitted_at"],
     ):
         assert value.endswith("+00:00"), value
+
+
+def test_attempt_cannot_be_submitted_twice_under_new_id(
+    client: TestClient, session: Session, assigned
+):
+    """换个 submission_id 重发同一轮次，不能凭空生成 revision 2。
+
+    重标的正当路径是另开一个轮次再提交；本地 IndexedDB 用唯一索引守住了
+    「一轮次一提交」，服务端必须守住同一条。
+    """
+    complete_attempt(client, assigned)
+    first = client.post(
+        "/api/attempts/att-1/submit", json={"submission_id": "sub-1"}, headers=assigned
+    ).json()
+    again = client.post(
+        "/api/attempts/att-1/submit", json={"submission_id": "sub-other"}, headers=assigned
+    ).json()
+
+    assert again["submission_id"] == first["submission_id"]
+    assert again["revision"] == 1
+    assert session.query(Submission).count() == 1
+
+
+def test_attempt_out_carries_every_field_the_client_restores(
+    client: TestClient, assigned
+):
+    """跨设备恢复要用这些字段还原 Attempt，缺一个前端就拼不回来。"""
+    client.put("/api/attempts/att-1", json=attempt_body(), headers=assigned)
+    body = client.get("/api/attempts", headers=assigned).json()[0]
+
+    for field in (
+        "schema_version",
+        "attempt_id",
+        "task_id",
+        "annotator_id",
+        "media_id",
+        "modality",
+        "mode",
+        "status",
+        "task_snapshot",
+        "sample_rate_hz",
+        "started_at",
+        "completed_at",
+        "sample_count",
+        "last_media_time",
+        "events",
+        "calibration",
+    ):
+        assert field in body, field

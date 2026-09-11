@@ -182,6 +182,8 @@ class Submission(Base):
         UniqueConstraint(
             "annotator_id", "task_id", "revision", name="uq_submissions_revision"
         ),
+        # 一个轮次只能提交一次；重标要另开轮次，由此形成新版本
+        UniqueConstraint("attempt_id", name="uq_submissions_attempt"),
     )
 
 

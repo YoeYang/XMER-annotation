@@ -134,6 +134,27 @@ def attempt(session: Session, annotator: Annotator, task: Task) -> Attempt:
     return row
 
 
+@pytest.fixture
+def second_attempt(session: Session, annotator: Annotator, task: Task) -> Attempt:
+    """重标产生的第二个轮次——Update 形成新版本的正当路径。"""
+    row = Attempt(
+        attempt_id="att-2",
+        task_id=task.task_id,
+        annotator_id=annotator.annotator_id,
+        media_id=task.media_id,
+        modality=task.modality,
+        mode="annotation",
+        status="completed",
+        task_snapshot={"task_id": task.task_id},
+        events=[],
+        sample_rate_hz=10,
+        started_at=datetime.now(timezone.utc),
+    )
+    session.add(row)
+    session.commit()
+    return row
+
+
 # --------------------------------------------------------------- 请求头夹具
 
 

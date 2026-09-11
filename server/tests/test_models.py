@@ -55,9 +55,13 @@ def test_chunks_reassemble_in_index_order(session: Session, attempt: Attempt):
 
 
 def test_submission_chain_keeps_history(
-    session: Session, annotator: Annotator, task: Task, attempt: Attempt
+    session: Session,
+    annotator: Annotator,
+    task: Task,
+    attempt: Attempt,
+    second_attempt: Attempt,
 ):
-    """Update 形成新版本并指回上一版，旧提交仍然可查。"""
+    """Update 另开轮次形成新版本并指回上一版，旧提交仍然可查。"""
     first = Submission(
         submission_id="sub-1",
         task_id=task.task_id,
@@ -73,7 +77,7 @@ def test_submission_chain_keeps_history(
         submission_id="sub-2",
         task_id=task.task_id,
         annotator_id=annotator.annotator_id,
-        attempt_id=attempt.attempt_id,
+        attempt_id=second_attempt.attempt_id,
         revision=2,
         previous_submission_id="sub-1",
         submitted_at=NOW,
@@ -87,16 +91,23 @@ def test_submission_chain_keeps_history(
 
 
 def test_submission_revision_is_unique_per_task(
-    session: Session, annotator: Annotator, task: Task, attempt: Attempt
+    session: Session,
+    annotator: Annotator,
+    task: Task,
+    attempt: Attempt,
+    second_attempt: Attempt,
 ):
     """同一标注者对同一任务不能出现两个 revision 1——重复提交去重的底线。"""
-    for submission_id in ("sub-1", "sub-1-replay"):
+    for submission_id, source in (
+        ("sub-1", attempt),
+        ("sub-1-replay", second_attempt),
+    ):
         session.add(
             Submission(
                 submission_id=submission_id,
                 task_id=task.task_id,
                 annotator_id=annotator.annotator_id,
-                attempt_id=attempt.attempt_id,
+                attempt_id=source.attempt_id,
                 revision=1,
                 submitted_at=NOW,
             )
@@ -204,5 +215,24 @@ def test_attempt_flag_history_is_kept(session: Session, attempt: Attempt):
 
 def test_attempt_flag_rejects_unknown_value(session: Session, attempt: Attempt):
     session.add(AttemptFlag(attempt_id=attempt.attempt_id, flag="maybe"))
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_one_submission_per_attempt(
+    session: Session, annotator: Annotator, task: Task, attempt: Attempt
+):
+    """一轮次一提交：换个 submission_id 也不能给同一轮次再提交一次。"""
+    for submission_id, revision in (("sub-1", 1), ("sub-other", 2)):
+        session.add(
+            Submission(
+                submission_id=submission_id,
+                task_id=task.task_id,
+                annotator_id=annotator.annotator_id,
+                attempt_id=attempt.attempt_id,
+                revision=revision,
+                submitted_at=NOW,
+            )
+        )
     with pytest.raises(IntegrityError):
         session.commit()

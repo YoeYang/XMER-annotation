@@ -148,6 +148,14 @@ def submit_attempt(
             raise HTTPException(status.HTTP_409_CONFLICT, "提交编号已被占用。")
         return SubmissionOut.model_validate(replay)
 
+    # 一轮次一提交：换个 submission_id 重发不能凭空生成新版本。
+    # 重标要另开轮次，那才是 Update 的正当路径。
+    already = session.scalar(
+        select(Submission).where(Submission.attempt_id == attempt_id)
+    )
+    if already is not None:
+        return SubmissionOut.model_validate(already)
+
     if attempt.mode != "annotation":
         raise HTTPException(status.HTTP_409_CONFLICT, "预览轮次不能提交。")
     if attempt.status != "completed":
