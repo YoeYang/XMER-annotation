@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,16 @@ from .schemas import (
 )
 
 router = APIRouter(prefix="/api")
+
+# 完整视频排在三个单模态之后。同一样本的四个任务 order_index 相同，
+# 不显式定义次级排序的话数据库返回的顺序是未定义的——而客户端的默认选中
+# 与「下一个样本」都跟着这个顺序走，等于把防污染的排序绕过去。
+MODALITY_RANK = case(
+    (Task.modality == "visual", 0),
+    (Task.modality == "audio", 1),
+    (Task.modality == "text", 2),
+    else_=3,
+)
 
 
 def _assigned_task(session: Session, annotator: Annotator, task_id: str) -> Task:
@@ -57,7 +67,7 @@ def read_me(
             Assignment.annotator_id == annotator.annotator_id,
             Assignment.phase == annotator.phase,
         )
-        .order_by(Assignment.order_index)
+        .order_by(Assignment.order_index, MODALITY_RANK)
     ).all()
     return MeOut(
         annotator_id=annotator.annotator_id,

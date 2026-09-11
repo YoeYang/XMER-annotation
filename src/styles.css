@@ -1593,26 +1593,21 @@ progress::-moz-progress-bar {
   font-size: 0.78rem;
 }
 
-/* 说话人身份参考：占标题行右侧原有空白，小而清楚，不与媒体区争地方 */
-.heading-right {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
+/* 说话人身份参考：媒体区正上方，作为标注对象的身份提示 */
 .speaker-ref {
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin: 0;
-  padding: 6px 12px 6px 6px;
+  gap: 14px;
+  margin: 0 0 14px;
+  padding: 10px 16px 10px 10px;
   border: 1px solid var(--line, #e2e8ef);
-  border-radius: 8px;
+  border-radius: 12px;
   background: #fff;
 }
 .speaker-ref img {
-  width: 42px;
-  height: 42px;
-  border-radius: 6px;
+  width: 76px;
+  height: 76px;
+  border-radius: 10px;
   object-fit: cover;
   display: block;
   flex: none;
@@ -1620,13 +1615,39 @@ progress::-moz-progress-bar {
 .speaker-ref figcaption {
   display: flex;
   flex-direction: column;
-  line-height: 1.3;
+  gap: 2px;
+  line-height: 1.35;
 }
-.speaker-ref small {
-  font-size: 0.66rem;
-  letter-spacing: 0.04em;
-  color: var(--muted, #7b8794);
+.speaker-ref .eyebrow {
+  font-size: 0.62rem;
 }
 .speaker-ref strong {
+  font-size: 0.95rem;
+}
+.speaker-ref small {
+  font-size: 0.8rem;
+  color: var(--muted, #7b8794);
+}
+
+/* 顶栏只读身份（云端模式下标注者编号不可编辑） */
+.annotator-identity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.identity-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.identity-text strong {
   font-size: 0.82rem;
+}
+.identity-text small {
+  font-size: 0.68rem;
+  color: var(--muted, #7b8794);
+}
+.loading-workspace small {
+  color: var(--muted, #7b8794);
+  font-size: 0.78rem;
 }

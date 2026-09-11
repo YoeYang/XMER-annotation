@@ -22,7 +22,7 @@ from app.assignments import replace_assignments, tasks_by_sample
 from app.auth import hash_token, new_token
 from app.config import PHASES, load_settings
 from app.db import create_all, create_db_engine, create_session_factory
-from app.models import Annotator, Assignment
+from app.models import Annotator, Assignment, Task
 
 PLAN_FIELDS = ["annotator_id", "order_index", "sample_id", "is_anchor"]
 
@@ -87,6 +87,40 @@ def cmd_create_annotators(args):
 
     print(f"已创建 {len(rows)} 个账号 → {out}")
     print("注意：token 只在此文件出现一次，服务器只存哈希。丢失只能重新生成账号。")
+
+
+def cmd_import_tasks(args):
+    """导入任务定义。`-` 表示从标准输入读，格式同 public/tasks.json。"""
+    raw = sys.stdin.read() if args.file == "-" else Path(args.file).read_text("utf-8")
+    payload = json.loads(raw)
+
+    factory = session_factory()
+    added = updated = 0
+    with factory() as session:
+        for item in payload:
+            row = session.get(Task, item["task_id"])
+            fields = dict(
+                media_id=item["media_id"],
+                source_id=item["source_id"],
+                title=item["title"],
+                modality=item["modality"],
+                src=item["src"],
+                duration=float(item["duration"]),
+                target=item.get("target", ""),
+                demo=bool(item.get("demo")),
+                timeline_origin=float(item.get("timeline_origin", 0)),
+                speaker_ref_src=item.get("speaker_ref_src"),
+                speaker_name=item.get("speaker_name"),
+            )
+            if row is None:
+                session.add(Task(task_id=item["task_id"], **fields))
+                added += 1
+            else:
+                for key, value in fields.items():
+                    setattr(row, key, value)
+                updated += 1
+        session.commit()
+    print(f"任务导入完成：新增 {added}，更新 {updated}")
 
 
 # ------------------------------------------------------------------ 分配
@@ -214,6 +248,10 @@ def main():
     create.add_argument("--base-url", default="https://example.invalid/annotation")
     create.add_argument("--out", default="annotators.csv")
     create.set_defaults(func=cmd_create_annotators)
+
+    imp = sub.add_parser("import-tasks", help="导入任务定义（tasks.json 格式）")
+    imp.add_argument("--file", required=True, help="文件路径，或 - 表示标准输入")
+    imp.set_defaults(func=cmd_import_tasks)
 
     plan = sub.add_parser("plan", help="生成分配计划 CSV")
     plan.add_argument("--pool", required=True)

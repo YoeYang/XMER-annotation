@@ -76,6 +76,21 @@ export default function MediaPanel({ task, session, view, onReload }: Props) {
         </div>
         <span className="chip">{MODALITY_LABELS[task.modality]}</span>
       </div>
+      {task.speaker_ref_src && (
+        <figure className="speaker-ref">
+          <img
+            src={resolveAssetPath(task.speaker_ref_src)}
+            alt={
+              task.speaker_name ? "目标说话人 " + task.speaker_name : "目标说话人"
+            }
+          />
+          <figcaption>
+            <span className="eyebrow">目标说话人</span>
+            <strong>按这个人进行标注</strong>
+            {task.speaker_name && <small>{task.speaker_name}</small>}
+          </figcaption>
+        </figure>
+      )}
       <div className={"media-stage " + task.modality}>
         {(task.modality === "visual" || task.modality === "audiovisual") && (
           <video

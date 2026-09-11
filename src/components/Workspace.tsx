@@ -4,12 +4,7 @@ import { AnnotationSession } from "../core/session";
 import type { AnnotationRepository } from "../storage/repository";
 import type { SyncState } from "../storage/syncingRepository";
 import type { Attempt, Submission, Task } from "../types";
-import {
-  formatDate,
-  MODALITY_LABELS,
-  resolveAssetPath,
-  SAMPLE_RATE_HZ,
-} from "../config";
+import { formatDate, MODALITY_LABELS, SAMPLE_RATE_HZ } from "../config";
 import AnnotationPad from "./AnnotationPad";
 import MediaPanel from "./MediaPanel";
 import AttemptPanel from "./AttemptPanel";
@@ -91,27 +86,9 @@ export default function Workspace(props: Props) {
             {task.demo ? "演示任务 · 非实验素材" : task.source_id}
           </p>
         </div>
-        <div className="heading-right">
-          {task.speaker_ref_src && (
-            <figure className="speaker-ref">
-              <img
-                src={resolveAssetPath(task.speaker_ref_src)}
-                alt={
-                  task.speaker_name
-                    ? "目标说话人 " + task.speaker_name
-                    : "目标说话人"
-                }
-              />
-              <figcaption>
-                <small>按这个人标注</small>
-                {task.speaker_name && <strong>{task.speaker_name}</strong>}
-              </figcaption>
-            </figure>
-          )}
-          <div className="sample-counter">
-            <strong>{String(props.index + 1).padStart(2, "0")}</strong>
-            <span>/ {String(props.total).padStart(2, "0")}</span>
-          </div>
+        <div className="sample-counter">
+          <strong>{String(props.index + 1).padStart(2, "0")}</strong>
+          <span>/ {String(props.total).padStart(2, "0")}</span>
         </div>
       </div>
       <div className="instruction-strip">

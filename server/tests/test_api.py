@@ -381,3 +381,46 @@ def test_attempt_out_carries_every_field_the_client_restores(
         "calibration",
     ):
         assert field in body, field
+
+
+def test_queue_puts_full_video_after_the_single_modalities(
+    client: TestClient, session: Session, annotator, auth
+):
+    """回归：同一样本的四个任务 order_index 相同，次级排序若不定义，
+    服务器可能把完整视频排在最前——而先看完整视频正是要避免的污染。
+    侧栏只在显示时排序，默认选中的任务和「下一个样本」都跟服务器顺序走。
+
+    完整视频**先**插入，使"按插入顺序返回"会给出错误答案。
+    """
+    from app.models import Task
+
+    for task_id, modality in (
+        ("EX-AV", "audiovisual"),
+        ("EX-TX", "text"),
+        ("EX-AU", "audio"),
+        ("EX-VI", "visual"),
+    ):
+        session.add(
+            Task(
+                task_id=task_id,
+                media_id="m-" + task_id,
+                source_id="meld_dia11_utt9",
+                title=task_id,
+                modality=modality,
+                src="/media/x",
+                duration=6.715,
+            )
+        )
+        session.flush()
+        session.add(
+            Assignment(
+                annotator_id=annotator.annotator_id,
+                task_id=task_id,
+                phase="pilot",
+                order_index=0,
+            )
+        )
+    session.commit()
+
+    order = [t["modality"] for t in client.get("/api/me", headers=auth).json()["tasks"]]
+    assert order == ["visual", "audio", "text", "audiovisual"]
