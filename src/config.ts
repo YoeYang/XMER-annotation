@@ -24,6 +24,8 @@ export function resolveAssetPath(path: string): string {
     ? base + path.replace(/^\//, "")
     : base + "/" + path.replace(/^\//, "");
 }
+// 子路径部署时 API 也在 base 之下，与静态资源同理
+export const API_BASE = resolveAssetPath("/api");
 export function formatTime(seconds: number) {
   const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
   return (

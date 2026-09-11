@@ -1569,3 +1569,26 @@ progress::-moz-progress-bar {
     transition: none !important;
   }
 }
+
+/* 顶栏只读身份（云端模式下标注者编号不可编辑） */
+.annotator-identity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.identity-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.identity-text strong {
+  font-size: 0.82rem;
+}
+.identity-text small {
+  font-size: 0.68rem;
+  color: var(--muted, #7b8794);
+}
+.loading-workspace small {
+  color: var(--muted, #7b8794);
+  font-size: 0.78rem;
+}

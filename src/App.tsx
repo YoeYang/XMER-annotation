@@ -4,17 +4,25 @@ import {
   ArrowDownToLine,
   BookOpen,
   Check,
-  HardDrive,
+  CloudCog,
   X,
 } from "lucide-react";
 import { IndexedDbRepository } from "./storage/indexedDbRepository";
+import { HttpRepository } from "./storage/httpRepository";
+import { SyncingRepository } from "./storage/syncingRepository";
+import { captureToken, getToken } from "./auth";
 import { validateTasks } from "./core/textTimeline";
-import { resolveAssetPath } from "./config";
+import { API_BASE } from "./config";
 import type { AnnotationSession } from "./core/session";
 import type { Attempt, Submission, Task } from "./types";
 import TaskSidebar from "./components/TaskSidebar";
 import Workspace from "./components/Workspace";
 
+const PHASE_NAMES: Record<string, string> = {
+  pilot: "试标阶段",
+  training: "培训阶段",
+  main: "正式标注",
+};
 function remembered(key: string, fallback: string) {
   try {
     return localStorage.getItem(key) || fallback;
@@ -23,13 +31,21 @@ function remembered(key: string, fallback: string) {
   }
 }
 export default function App() {
-  const [repository] = useState(() => new IndexedDbRepository());
+  const [token] = useState(() => captureToken());
+  const [repository] = useState(
+    () =>
+      new SyncingRepository(
+        new IndexedDbRepository(),
+        new HttpRepository({ baseUrl: API_BASE, getToken }),
+      ),
+  );
   const [tasks, setTasks] = useState<Task[]>([]),
     [selected, setSelected] = useState(remembered("xmer-task", ""));
-  const [annotator, setAnnotator] = useState(
-      remembered("xmer-annotator", "A001"),
-    ),
-    [draftId, setDraftId] = useState(annotator);
+  // 身份由令牌决定，不接受页面输入——否则任何人都能冒充他人编号
+  const [annotator, setAnnotator] = useState(""),
+    [profile, setProfile] = useState<{ name: string; phase: string } | null>(
+      null,
+    );
   const [attempts, setAttempts] = useState<Attempt[]>([]),
     [submissions, setSubmissions] = useState<Submission[]>([]);
   const [error, setError] = useState(""),
@@ -76,18 +92,39 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!locked) return;
+    if (!token) {
+      setError(
+        "缺少访问令牌。请使用研究者发给你的专属网址打开本页面，不要手动输入地址。",
+      );
+      return;
+    }
     let cancelled = false;
     setReady(false);
     void (async () => {
       try {
-        const response = await fetch(resolveAssetPath("/tasks.json"));
-        if (!response.ok)
-          throw new Error("样本目录加载失败，请检查 tasks.json");
-        const list = validateTasks(await response.json());
-        await repository.recoverInterrupted(annotator);
+        const response = await fetch(API_BASE + "/me", {
+          headers: { authorization: "Bearer " + token },
+        });
+        if (response.status === 401 || response.status === 403)
+          throw new Error(
+            "访问令牌无效或已停用，请向研究者索取新的专属网址。",
+          );
+        if (!response.ok) throw new Error("无法连接标注服务器，请稍后重试。");
+        const me = await response.json();
+        if (cancelled) return;
+        setAnnotator(me.annotator_id);
+        setProfile({ name: me.display_name || me.annotator_id, phase: me.phase });
+        // 尚无分配不是错误，走空状态而不是报错页
+        if (!me.tasks.length) {
+          setTasks([]);
+          setReady(true);
+          return;
+        }
+        const list = validateTasks(me.tasks);
+        await repository.recoverInterrupted(me.annotator_id);
         const [a, s] = await Promise.all([
-          repository.listAttempts(annotator),
-          repository.listSubmissions(annotator),
+          repository.listAttempts(me.annotator_id),
+          repository.listSubmissions(me.annotator_id),
         ]);
         if (cancelled) return;
         setTasks(list);
@@ -99,13 +136,13 @@ export default function App() {
         setReady(true);
       } catch (e) {
         if (!cancelled)
-          setError(e instanceof Error ? e.message : "本地工作区读取失败");
+          setError(e instanceof Error ? e.message : "标注工作区读取失败");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [locked, annotator, repository]);
+  }, [locked, token, repository]);
   const remember = (key: string, value: string) => {
     try {
       localStorage.setItem(key, value);
@@ -166,52 +203,24 @@ export default function App() {
         </div>
         <div className="header-actions">
           <span className="local-badge">
-            <HardDrive size={14} />
-            本地模式
+            <CloudCog size={14} />
+            云端工作区
           </span>
           <button className="header-help" onClick={() => setHelp(true)}>
             <BookOpen size={16} />
             标注指南
           </button>
-          <form
-            className="annotator-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!draftId.trim() || switching) return;
-              setSwitching(true);
-              void (async () => {
-                try {
-                  await activeSession.current?.leave();
-                  remember("xmer-annotator", draftId.trim());
-                  setAnnotator(draftId.trim());
-                } catch {
-                  setError("保存失败，暂时无法切换标注者");
-                } finally {
-                  setSwitching(false);
-                }
-              })();
-            }}
-          >
-            <span className="avatar">
-              {annotator.slice(0, 1).toUpperCase()}
-            </span>
-            <label>
-              <span>标注者</span>
-              <input
-                aria-label="标注者编号"
-                value={draftId}
-                maxLength={40}
-                pattern="[A-Za-z0-9_-]+"
-                title="使用英文字母、数字、下划线或短横线"
-                onChange={(e) => setDraftId(e.target.value)}
-              />
-            </label>
-            {draftId !== annotator && (
-              <button aria-label="应用标注者编号" disabled={switching}>
-                <Check size={15} />
-              </button>
-            )}
-          </form>
+          {profile && (
+            <div className="annotator-identity">
+              <span className="avatar">
+                {annotator.slice(-2)}
+              </span>
+              <span className="identity-text">
+                <strong>{profile.name}</strong>
+                <small>{PHASE_NAMES[profile.phase] ?? profile.phase}</small>
+              </span>
+            </div>
+          )}
         </div>
       </header>
       {error && (
@@ -259,6 +268,12 @@ export default function App() {
             }}
             onExport={exportAll}
           />
+        </div>
+      ) : ready && !tasks.length ? (
+        <div className="loading-workspace">
+          <Activity size={28} />
+          <p>研究者尚未给你分配样本。</p>
+          <small>分配完成后刷新本页即可开始，无需重新索取链接。</small>
         </div>
       ) : (
         !error && (
@@ -313,8 +328,8 @@ export default function App() {
             </ol>
             <p className="guide-local">
               <ArrowDownToLine size={18} />
-              第一版结果仅保存在当前浏览器。请导出 JSON
-              备份，清除浏览器数据会删除本地记录。
+              标注结果会自动同步到服务器。断网时可继续标注，恢复连接后自动补传；
+              待上传条数显示在保存状态栏。
             </p>
             <button className="button primary" onClick={() => setHelp(false)}>
               我知道了，开始标注
