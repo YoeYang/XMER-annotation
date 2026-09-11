@@ -10,6 +10,7 @@ import {
 import { IndexedDbRepository } from "./storage/indexedDbRepository";
 import { HttpRepository } from "./storage/httpRepository";
 import { SyncingRepository } from "./storage/syncingRepository";
+import type { SyncState } from "./storage/syncingRepository";
 import { captureToken, getToken } from "./auth";
 import { validateTasks } from "./core/textTimeline";
 import { API_BASE } from "./config";
@@ -54,7 +55,12 @@ export default function App() {
   const [help, setHelp] = useState(false),
     [switching, setSwitching] = useState(false),
     [reload, setReload] = useState(0);
+  const [sync, setSync] = useState<SyncState | null>(null);
   const activeSession = useRef<AnnotationSession | null>(null);
+  useEffect(() => {
+    setSync(repository.getState());
+    return repository.subscribe(setSync) as unknown as () => void;
+  }, [repository]);
   const refresh = useCallback(async () => {
     const [a, s] = await Promise.all([
       repository.listAttempts(annotator),
@@ -202,9 +208,12 @@ export default function App() {
           多模态情感研究<span>/</span>标注工作台
         </div>
         <div className="header-actions">
-          <span className="local-badge">
+          <span
+            className={"local-badge " + (sync?.lastError ? "error-text" : "")}
+            title={sync?.lastError ?? undefined}
+          >
             <CloudCog size={14} />
-            云端工作区
+            {sync?.pending ? "待上传 " + sync.pending + " 条" : "云端工作区"}
           </span>
           <button className="header-help" onClick={() => setHelp(true)}>
             <BookOpen size={16} />
@@ -267,6 +276,8 @@ export default function App() {
               })();
             }}
             onExport={exportAll}
+            sync={sync}
+            onRetrySync={() => repository.retryNow()}
           />
         </div>
       ) : ready && !tasks.length ? (

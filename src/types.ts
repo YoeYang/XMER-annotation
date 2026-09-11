@@ -10,6 +10,9 @@ export interface Task {
   target: string;
   demo: boolean;
   timeline_origin: number;
+  // 说话人身份参考，由预处理流水线产出；属任务说明，不是被评定的材料
+  speaker_ref_src?: string | null;
+  speaker_name?: string | null;
 }
 export interface Segment {
   start: number;

@@ -1,14 +1,21 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, Info, Save } from "lucide-react";
+import { ArrowRight, CloudUpload, Info, Save } from "lucide-react";
 import { AnnotationSession } from "../core/session";
 import type { AnnotationRepository } from "../storage/repository";
+import type { SyncState } from "../storage/syncingRepository";
 import type { Attempt, Submission, Task } from "../types";
-import { formatDate, MODALITY_LABELS, SAMPLE_RATE_HZ } from "../config";
+import {
+  formatDate,
+  MODALITY_LABELS,
+  resolveAssetPath,
+  SAMPLE_RATE_HZ,
+} from "../config";
 import AnnotationPad from "./AnnotationPad";
 import MediaPanel from "./MediaPanel";
 import AttemptPanel from "./AttemptPanel";
 interface Props {
   task: Task;
+  sync: SyncState | null;
   index: number;
   total: number;
   annotator: string;
@@ -20,6 +27,7 @@ interface Props {
   onNext: () => void;
   onReload: () => void;
   onExport: () => Promise<void>;
+  onRetrySync: () => void;
 }
 export default function Workspace(props: Props) {
   const { task, annotator, repository } = props;
@@ -83,9 +91,27 @@ export default function Workspace(props: Props) {
             {task.demo ? "演示任务 · 非实验素材" : task.source_id}
           </p>
         </div>
-        <div className="sample-counter">
-          <strong>{String(props.index + 1).padStart(2, "0")}</strong>
-          <span>/ {String(props.total).padStart(2, "0")}</span>
+        <div className="heading-right">
+          {task.speaker_ref_src && (
+            <figure className="speaker-ref">
+              <img
+                src={resolveAssetPath(task.speaker_ref_src)}
+                alt={
+                  task.speaker_name
+                    ? "目标说话人 " + task.speaker_name
+                    : "目标说话人"
+                }
+              />
+              <figcaption>
+                <small>按这个人标注</small>
+                {task.speaker_name && <strong>{task.speaker_name}</strong>}
+              </figcaption>
+            </figure>
+          )}
+          <div className="sample-counter">
+            <strong>{String(props.index + 1).padStart(2, "0")}</strong>
+            <span>/ {String(props.total).padStart(2, "0")}</span>
+          </div>
         </div>
       </div>
       <div className="instruction-strip">
@@ -116,25 +142,37 @@ export default function Workspace(props: Props) {
         />
       </div>
       <div
-        className={"save-line " + (view.save === "error" ? "error-text" : "")}
+        className={
+          "save-line " +
+          (view.save === "error" || props.sync?.lastError ? "error-text" : "")
+        }
         role="status"
       >
-        <Save size={14} />
+        {props.sync?.pending ? <CloudUpload size={14} /> : <Save size={14} />}
         <span>
-          {view.save === "saving"
-            ? "正在保存到本地…"
-            : view.save === "saved"
-              ? "已保存到本地 · " + formatDate(view.savedAt)
-              : view.save === "error"
-                ? "保存失败：" + view.saveError
-                : "本地自动保存已就绪"}
+          {view.save === "error"
+            ? "保存失败：" + view.saveError
+            : view.save === "saving"
+              ? "正在保存…"
+              : props.sync?.pending
+                ? "本地已保存，待上传 " + props.sync.pending + " 条"
+                : view.save === "saved"
+                  ? "已同步到服务器 · " + formatDate(view.savedAt)
+                  : "自动保存已就绪"}
         </span>
         {view.save === "error" && (
           <button onClick={() => void action(() => session.flush())}>
             重试保存
           </button>
         )}
-        <small>仅当前浏览器可读取</small>
+        {props.sync?.lastError && (
+          <button onClick={props.onRetrySync}>重试上传</button>
+        )}
+        <small>
+          {props.sync?.lastError
+            ? "连接不通：" + props.sync.lastError + "，标注可继续"
+            : "断网可继续标注，恢复后自动补传"}
+        </small>
       </div>
       <AttemptPanel
         attempts={attempts}

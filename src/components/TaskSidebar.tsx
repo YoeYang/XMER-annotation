@@ -26,12 +26,13 @@ const icons = {
   text: Type,
   audiovisual: Film,
 };
-// 完整视频排最前，帮助在多人场景中先确定说话主体
+// 完整视频排最后：先看完整视频会让随后的单模态标注变成回忆而非感知，
+// 而模态间的不一致正是本研究的因变量。说话主体改由静帧参考给出。
 const MODALITY_ORDER: Record<Modality, number> = {
-  audiovisual: 0,
-  visual: 1,
-  audio: 2,
-  text: 3,
+  visual: 0,
+  audio: 1,
+  text: 2,
+  audiovisual: 3,
 };
 interface Group {
   source_id: string;
