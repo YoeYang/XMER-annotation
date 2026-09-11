@@ -1,0 +1,334 @@
+from datetime import datetime, timezone
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from app.models import Assignment, Attempt, Submission
+
+NOW = datetime.now(timezone.utc).isoformat()
+
+
+def attempt_body(task_id: str = "EXAMPLE-001", **overrides) -> dict:
+    body = {
+        "task_id": task_id,
+        "media_id": "example-visual",
+        "modality": "visual",
+        "mode": "annotation",
+        "status": "recording",
+        "task_snapshot": {"task_id": task_id},
+        "events": [],
+        "sample_rate_hz": 10,
+        "started_at": NOW,
+        "completed_at": None,
+    }
+    body.update(overrides)
+    return body
+
+
+def samples(*indices: int) -> list[dict]:
+    return [
+        {"sample_index": i, "media_time": i * 0.1, "valence": 0.1, "arousal": 0.2}
+        for i in indices
+    ]
+
+
+# --------------------------------------------------------------- 身份与隔离
+
+
+def test_missing_token_is_rejected(client: TestClient):
+    assert client.get("/api/me").status_code == 401
+
+
+def test_unknown_token_is_rejected(client: TestClient):
+    response = client.get("/api/me", headers={"Authorization": "Bearer nope"})
+    assert response.status_code == 401
+
+
+def test_deactivated_annotator_is_blocked(
+    client: TestClient, session: Session, annotator, auth
+):
+    annotator.active = False
+    session.commit()
+    assert client.get("/api/me", headers=auth).status_code == 403
+
+
+def test_me_lists_assigned_tasks_in_queue_order(
+    client: TestClient, session: Session, annotator, task, second_task, auth
+):
+    session.add_all(
+        [
+            Assignment(
+                annotator_id=annotator.annotator_id,
+                task_id=second_task.task_id,
+                phase="pilot",
+                order_index=0,
+            ),
+            Assignment(
+                annotator_id=annotator.annotator_id,
+                task_id=task.task_id,
+                phase="pilot",
+                order_index=1,
+            ),
+        ]
+    )
+    session.commit()
+
+    body = client.get("/api/me", headers=auth).json()
+    assert [t["task_id"] for t in body["tasks"]] == ["EXAMPLE-002", "EXAMPLE-001"]
+    assert body["tasks"][1]["speaker_name"] == "Phoebe"
+
+
+def test_me_never_reveals_anchor_status(
+    client: TestClient, session: Session, annotator, task, auth
+):
+    """标注者必须无从分辨哪些是锚点，否则锚点数据失去质控意义。"""
+    session.add(
+        Assignment(
+            annotator_id=annotator.annotator_id,
+            task_id=task.task_id,
+            phase="pilot",
+            order_index=0,
+            is_anchor=True,
+        )
+    )
+    session.commit()
+
+    body = client.get("/api/me", headers=auth).json()
+    assert "is_anchor" not in body["tasks"][0]
+    assert "is_anchor" not in client.get("/api/me", headers=auth).text
+
+
+def test_me_hides_other_phases(
+    client: TestClient, session: Session, annotator, task, auth
+):
+    """pilot 标注者看不到分配在 main 阶段的同一样本。"""
+    session.add(
+        Assignment(
+            annotator_id=annotator.annotator_id,
+            task_id=task.task_id,
+            phase="main",
+            order_index=0,
+        )
+    )
+    session.commit()
+    assert client.get("/api/me", headers=auth).json()["tasks"] == []
+
+
+def test_cannot_open_attempt_on_unassigned_task(client: TestClient, task, auth):
+    response = client.put("/api/attempts/att-x", json=attempt_body(), headers=auth)
+    assert response.status_code == 404
+
+
+def test_cannot_touch_another_annotators_attempt(
+    client: TestClient, session: Session, assigned, other_auth
+):
+    client.put("/api/attempts/att-1", json=attempt_body(), headers=assigned)
+    response = client.put(
+        "/api/attempts/att-1/chunks/0", json={"samples": samples(0)}, headers=other_auth
+    )
+    assert response.status_code == 404
+
+
+# --------------------------------------------------------------- 幂等写入
+
+
+def test_attempt_put_is_idempotent(client: TestClient, session: Session, assigned):
+    for _ in range(3):
+        response = client.put(
+            "/api/attempts/att-1", json=attempt_body(), headers=assigned
+        )
+        assert response.status_code == 200
+    assert session.query(Attempt).count() == 1
+
+
+def test_attempt_annotator_comes_from_token_not_body(client: TestClient, assigned):
+    """客户端无法冒充他人：annotator_id 由令牌决定，请求体里写什么都没用。"""
+    body = attempt_body()
+    body["annotator_id"] = "A999"
+    response = client.put("/api/attempts/att-1", json=body, headers=assigned)
+    assert response.json()["annotator_id"] == "A001"
+
+
+def test_chunk_replay_is_ignored_not_duplicated(client: TestClient, assigned):
+    client.put("/api/attempts/att-1", json=attempt_body(), headers=assigned)
+
+    first = client.put(
+        "/api/attempts/att-1/chunks/0", json={"samples": samples(0, 1)}, headers=assigned
+    ).json()
+    replay = client.put(
+        "/api/attempts/att-1/chunks/0", json={"samples": samples(0, 1)}, headers=assigned
+    ).json()
+
+    assert first["stored"] is True
+    assert replay["stored"] is False
+    assert replay["sample_count"] == 2
+
+
+def test_chunks_arriving_out_of_order_reassemble(client: TestClient, assigned):
+    client.put("/api/attempts/att-1", json=attempt_body(), headers=assigned)
+    for index in (2, 0, 1):
+        client.put(
+            f"/api/attempts/att-1/chunks/{index}",
+            json={"samples": samples(index)},
+            headers=assigned,
+        )
+
+    export = client.get("/api/export", headers=assigned).json()
+    order = [s["sample_index"] for s in export["attempts"][0]["samples"]]
+    assert order == [0, 1, 2]
+
+
+def test_chunk_write_recomputes_progress(client: TestClient, assigned):
+    """进度以库中实际内容为准，元数据 PUT 丢失也能自愈。"""
+    client.put("/api/attempts/att-1", json=attempt_body(), headers=assigned)
+    client.put(
+        "/api/attempts/att-1/chunks/0", json={"samples": samples(0, 1)}, headers=assigned
+    )
+    body = client.put(
+        "/api/attempts/att-1/chunks/1", json={"samples": samples(2)}, headers=assigned
+    ).json()
+
+    assert body["sample_count"] == 3
+    listed = client.get("/api/attempts", headers=assigned).json()[0]
+    assert listed["sample_count"] == 3
+    assert listed["last_media_time"] == pytest.approx(0.2)
+
+
+def test_negative_chunk_index_is_rejected(client: TestClient, assigned):
+    client.put("/api/attempts/att-1", json=attempt_body(), headers=assigned)
+    response = client.put(
+        "/api/attempts/att-1/chunks/-1", json={"samples": []}, headers=assigned
+    )
+    assert response.status_code == 400
+
+
+# --------------------------------------------------------------- 提交与版本链
+
+
+def complete_attempt(client: TestClient, assigned, attempt_id="att-1"):
+    client.put(
+        f"/api/attempts/{attempt_id}",
+        json=attempt_body(status="completed", completed_at=NOW),
+        headers=assigned,
+    )
+    client.put(
+        f"/api/attempts/{attempt_id}/chunks/0",
+        json={"samples": samples(0)},
+        headers=assigned,
+    )
+
+
+def test_submit_creates_revision_one(client: TestClient, assigned):
+    complete_attempt(client, assigned)
+    body = client.post(
+        "/api/attempts/att-1/submit", json={"submission_id": "sub-1"}, headers=assigned
+    ).json()
+    assert body["revision"] == 1
+    assert body["previous_submission_id"] is None
+    assert body["updated_at"] is None
+
+
+def test_submit_replay_returns_same_record(
+    client: TestClient, session: Session, assigned
+):
+    """断网重试会重发同一 submission_id，不能变成第二个版本。"""
+    complete_attempt(client, assigned)
+    first = client.post(
+        "/api/attempts/att-1/submit", json={"submission_id": "sub-1"}, headers=assigned
+    ).json()
+    replay = client.post(
+        "/api/attempts/att-1/submit", json={"submission_id": "sub-1"}, headers=assigned
+    ).json()
+
+    assert replay == first
+    assert session.query(Submission).count() == 1
+
+
+def test_update_chains_to_previous_revision(client: TestClient, assigned):
+    complete_attempt(client, assigned)
+    client.post(
+        "/api/attempts/att-1/submit", json={"submission_id": "sub-1"}, headers=assigned
+    )
+    complete_attempt(client, assigned, attempt_id="att-2")
+    second = client.post(
+        "/api/attempts/att-2/submit", json={"submission_id": "sub-2"}, headers=assigned
+    ).json()
+
+    assert second["revision"] == 2
+    assert second["previous_submission_id"] == "sub-1"
+    assert second["updated_at"] is not None
+
+
+def test_preview_attempt_cannot_be_submitted(client: TestClient, assigned):
+    client.put(
+        "/api/attempts/att-1",
+        json=attempt_body(mode="preview", status="completed", completed_at=NOW),
+        headers=assigned,
+    )
+    response = client.post(
+        "/api/attempts/att-1/submit", json={"submission_id": "sub-1"}, headers=assigned
+    )
+    assert response.status_code == 409
+
+
+def test_unfinished_attempt_cannot_be_submitted(client: TestClient, assigned):
+    client.put("/api/attempts/att-1", json=attempt_body(), headers=assigned)
+    response = client.post(
+        "/api/attempts/att-1/submit", json={"submission_id": "sub-1"}, headers=assigned
+    )
+    assert response.status_code == 409
+
+
+# --------------------------------------------------------------- 导出
+
+
+def test_export_matches_v1_shape(client: TestClient, assigned):
+    complete_attempt(client, assigned)
+    client.post(
+        "/api/attempts/att-1/submit", json={"submission_id": "sub-1"}, headers=assigned
+    )
+
+    body = client.get("/api/export", headers=assigned).json()
+    assert body["schema_version"] == 1
+    assert body["storage"] == "cloud"
+    assert body["annotator_id"] == "A001"
+    assert body["unsaved_attempt_ids"] == []
+
+    attempt = body["attempts"][0]
+    # 分析脚本按这些字段读数据，缺一不可
+    for field in ("attempt_id", "modality", "samples", "events", "calibration"):
+        assert field in attempt
+    assert body["submissions"][0]["submission_id"] == "sub-1"
+
+
+def test_export_is_scoped_to_the_caller(
+    client: TestClient, assigned, other_auth, other_assigned
+):
+    complete_attempt(client, assigned)
+    assert client.get("/api/export", headers=other_auth).json()["attempts"] == []
+
+
+def test_timestamps_always_carry_timezone(client: TestClient, assigned):
+    """回归：从库里读回的 naive datetime 曾让重放响应少了时区后缀。
+
+    接口对外不能出现无时区时间戳，否则客户端只能靠猜是本地时间还是 UTC。
+    """
+    complete_attempt(client, assigned)
+    client.post(
+        "/api/attempts/att-1/submit", json={"submission_id": "sub-1"}, headers=assigned
+    )
+
+    listed = client.get("/api/attempts", headers=assigned).json()[0]
+    submission = client.get("/api/submissions", headers=assigned).json()[0]
+    export = client.get("/api/export", headers=assigned).json()
+
+    for value in (
+        listed["started_at"],
+        listed["completed_at"],
+        submission["submitted_at"],
+        export["exported_at"],
+        export["attempts"][0]["started_at"],
+        export["submissions"][0]["submitted_at"],
+    ):
+        assert value.endswith("+00:00"), value
