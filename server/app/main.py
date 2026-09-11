@@ -22,5 +22,5 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
 
     return app
 
-
-app = create_app()
+# 不在模块层构造 app：那会让导入本模块就读环境变量。
+# 生产入口为 `uvicorn app.main:create_app --factory`。
