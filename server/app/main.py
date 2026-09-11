@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from sqlalchemy import Engine
 
+from .admin import router as admin_router
 from .api import router
 from .config import Settings, load_settings
 from .db import create_db_engine, create_session_factory
@@ -15,6 +16,7 @@ def create_app(settings: Settings | None = None, engine: Engine | None = None) -
     app.state.engine = engine
     app.state.session_factory = create_session_factory(engine)
     app.include_router(router)
+    app.include_router(admin_router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

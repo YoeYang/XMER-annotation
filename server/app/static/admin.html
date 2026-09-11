@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XMER 标注进度</title>
+<style>
+  :root {
+    --bg: #f6f8fa; --surface: #fff; --ink: #18212b; --ink-2: #46566a;
+    --muted: #6b7a8c; --line: #dde4ec; --accent: #2f6f6a; --warm: #c06a3f;
+    --cool: #3a6ea5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.6 "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    padding: 28px 24px 64px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 13px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 20px; }
+  input[type=password], input[type=text] {
+    font: inherit; padding: 7px 11px; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--surface); color: var(--ink); min-width: 260px;
+  }
+  button {
+    font: inherit; padding: 7px 14px; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:hover { border-color: var(--accent); }
+  .totals { display: flex; gap: 26px; margin-bottom: 18px; flex-wrap: wrap; }
+  .totals div { background: var(--surface); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px 18px; min-width: 120px; }
+  .totals span { display: block; font-size: 12px; color: var(--muted); }
+  .totals strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .scroll { overflow-x: auto; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; min-width: 760px; }
+  th { text-align: left; font-size: 11px; letter-spacing: .08em; color: var(--muted);
+    font-weight: 500; padding: 12px 14px; border-bottom: 1px solid var(--line);
+    white-space: nowrap; }
+  td { padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  .num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .prog { display: flex; align-items: center; gap: 9px; min-width: 150px; }
+  .track { flex: 1; height: 6px; background: #e7edf3; border-radius: 3px; overflow: hidden; }
+  .fill { height: 100%; background: var(--accent); }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    border: 1px solid currentColor; white-space: nowrap; }
+  .p-pilot { color: var(--cool); } .p-training { color: var(--warm); } .p-main { color: var(--accent); }
+  .idle { color: var(--muted); }
+  .note { margin-top: 14px; color: var(--muted); font-size: 12px; }
+  .err { color: #b3261e; margin: 14px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>标注进度</h1>
+  <p class="sub">只读视图。分配与质量管理在 T7。</p>
+
+  <div class="bar">
+    <input type="password" id="tok" placeholder="管理员令牌" autocomplete="off">
+    <button class="primary" id="load">载入</button>
+    <button id="dump">导出全部（打包 JSON）</button>
+    <span class="idle" id="stamp"></span>
+  </div>
+
+  <div id="err" class="err" hidden></div>
+  <div class="totals" id="totals" hidden></div>
+  <div class="scroll" id="tablewrap" hidden>
+    <table>
+      <thead><tr>
+        <th>标注者</th><th>阶段</th>
+        <th class="num">已分配</th><th class="num">锚点</th>
+        <th class="num">已开始</th><th class="num">已提交</th>
+        <th>完成度</th><th>最后活动</th><th></th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <p class="note">
+    「已开始」「已提交」按任务去重计数：同一任务提交多个版本仍算一个。
+    单人导出的结构与 V1 一致，可直接交给 <code>scripts/plot_va_curves.py</code>。
+  </p>
+</div>
+
+<script>
+const PHASE = { pilot: "试标", training: "培训", main: "正式" };
+const $ = (id) => document.getElementById(id);
+const token = () => $("tok").value.trim();
+
+try { const saved = sessionStorage.getItem("xmer-admin"); if (saved) $("tok").value = saved; } catch {}
+
+function fail(message) {
+  $("err").textContent = message;
+  $("err").hidden = false;
+  $("totals").hidden = $("tablewrap").hidden = true;
+}
+
+async function api(path) {
+  const response = await fetch("." + path, {
+    headers: { authorization: "Bearer " + token() },
+  });
+  if (response.status === 401) throw new Error("管理员令牌无效。");
+  if (response.status === 503) throw new Error("管理端未启用：服务器未配置 XMER_ADMIN_TOKEN。");
+  if (!response.ok) throw new Error("请求失败（" + response.status + "）");
+  return response.json();
+}
+
+function save(name, data) {
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function load() {
+  if (!token()) return fail("请先填入管理员令牌。");
+  try {
+    const data = await api("/progress");
+    try { sessionStorage.setItem("xmer-admin", token()); } catch {}
+    $("err").hidden = true;
+    const t = data.totals;
+    $("totals").innerHTML =
+      `<div><span>标注者</span><strong>${t.annotators}</strong></div>` +
+      `<div><span>已分配任务</span><strong>${t.assigned}</strong></div>` +
+      `<div><span>已提交任务</span><strong>${t.submitted}</strong></div>`;
+    $("rows").innerHTML = data.annotators.map((r) => {
+      const pct = r.assigned ? Math.round((r.submitted / r.assigned) * 100) : 0;
+      const seen = r.last_activity
+        ? new Date(r.last_activity).toLocaleString("zh-CN", { hour12: false })
+        : "<span class='idle'>尚未开始</span>";
+      return `<tr>
+        <td><strong>${r.annotator_id}</strong>${r.display_name ? " · " + r.display_name : ""}
+            ${r.active ? "" : " <span class='pill'>已停用</span>"}</td>
+        <td><span class="pill p-${r.phase}">${PHASE[r.phase] || r.phase}</span></td>
+        <td class="num">${r.assigned}</td>
+        <td class="num">${r.anchors}</td>
+        <td class="num">${r.started}</td>
+        <td class="num">${r.submitted}</td>
+        <td><div class="prog"><div class="track"><div class="fill" style="width:${pct}%"></div></div>
+            <span class="num">${pct}%</span></div></td>
+        <td>${seen}</td>
+        <td><button data-who="${r.annotator_id}">导出</button></td>
+      </tr>`;
+    }).join("");
+    $("stamp").textContent = "更新于 " +
+      new Date(data.generated_at).toLocaleString("zh-CN", { hour12: false });
+    $("totals").hidden = $("tablewrap").hidden = false;
+  } catch (e) { fail(e.message); }
+}
+
+$("load").addEventListener("click", load);
+$("tok").addEventListener("keydown", (e) => { if (e.key === "Enter") load(); });
+$("dump").addEventListener("click", async () => {
+  try { save("xmer-all-" + Date.now() + ".json", await api("/export")); }
+  catch (e) { fail(e.message); }
+});
+$("rows").addEventListener("click", async (e) => {
+  const who = e.target.dataset && e.target.dataset.who;
+  if (!who) return;
+  try { save("xmer-" + who + ".json", await api("/export?annotator=" + who)); }
+  catch (err) { fail(err.message); }
+});
+if (token()) load();
+</script>
+</body>
+</html>

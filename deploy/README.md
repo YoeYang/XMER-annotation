@@ -98,3 +98,15 @@ docker run --rm -v /opt/xmer-annotation-src:/src -w /src node:20-alpine \
 | `/annotation/`、`/annotation/tasks.json` | 200（未受影响） |
 | `/training/` | 200（未受影响） |
 | `/` | 302（Label Studio，未受影响） |
+
+## 管理端（T6）
+
+- 页面：`https://47.238.255.165.nip.io/annotation/api/admin/ui`
+- 令牌：服务器上 `. /opt/xmer-label/.env.annotation && echo $XMER_ADMIN_TOKEN`
+
+页面本身不鉴权（只是个空壳），令牌在页面里填、存 sessionStorage；**所有数据请求都走
+带 `require_admin` 的接口**。令牌比较用 `secrets.compare_digest`，避免用响应时间试出令牌。
+服务器未配 `XMER_ADMIN_TOKEN` 时管理端返回 503（整体关闭），而不是放行。
+
+**下一步加固**：Caddy 层给 `/annotation/api/admin/*` 加 IP 白名单作为第二道防线。
+本次未加，以免把自己锁在外面——加之前先确认固定出口 IP。
