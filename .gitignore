@@ -12,3 +12,6 @@ playwright-report/
 server/**/__pycache__/
 server/.pytest_cache/
 server/*.db
+
+# 标注者链接含明文 token，绝不入库
+server/**/annotators*.csv
