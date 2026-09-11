@@ -22,9 +22,23 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib
+from scipy.signal import savgol_filter
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+# Savitzky-Golay smoothing: soften 10 Hz jitter without overshooting ±1
+SMOOTH_WINDOW, SMOOTH_ORDER = 11, 2
+
+
+def smooth(y: np.ndarray) -> np.ndarray:
+    n = len(y)
+    if n < SMOOTH_ORDER + 2:
+        return y
+    win = min(SMOOTH_WINDOW, n if n % 2 else n - 1)  # odd, <= n
+    if win <= SMOOTH_ORDER:
+        return y
+    return savgol_filter(y, win, SMOOTH_ORDER)
 
 # modality -> (display label, color)
 MODALITY_STYLE = {
@@ -77,7 +91,8 @@ def draw_curve(ax, s: dict, color: str, label: str):
     t, v, a = s["t"], s["v"], s["a"]
     if len(t) < 1:
         return
-    hw = arousal_to_halfwidth(a)
+    v = smooth(v)
+    hw = smooth(arousal_to_halfwidth(a))
     # arousal band: filled ribbon whose vertical width tracks arousal
     ax.fill_between(t, v - hw, v + hw, color=color, alpha=BAND_ALPHA,
                     linewidth=0, zorder=2)
@@ -152,24 +167,7 @@ def main():
         plt.close(fig)
         print("wrote", p)
 
-    # 1. three single modalities
-    fig, ax = plt.subplots(figsize=(10, 5))
-    for mod in ("visual", "audio", "text"):
-        if mod in series:
-            lbl, col = MODALITY_STYLE[mod]
-            draw_curve(ax, series[mod], col, lbl)
-    finish(fig, ax, "Emotion over time — three single modalities",
-           "va_three_modalities.png")
-
-    # 2. audiovisual alone
-    if "audiovisual" in series:
-        fig, ax = plt.subplots(figsize=(10, 5))
-        lbl, col = MODALITY_STYLE["audiovisual"]
-        draw_curve(ax, series["audiovisual"], col, lbl)
-        finish(fig, ax, "Emotion over time — full video (overall)",
-               "va_audiovisual.png")
-
-    # 3. all four
+    # all four overlaid (only output)
     fig, ax = plt.subplots(figsize=(10, 5))
     for mod in ("audiovisual", "visual", "audio", "text"):
         if mod in series:
