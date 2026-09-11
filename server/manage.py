@@ -15,13 +15,14 @@ import json
 import sys
 from pathlib import Path
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 
 from app.allocation import build_plan
+from app.assignments import replace_assignments, tasks_by_sample
 from app.auth import hash_token, new_token
 from app.config import PHASES, load_settings
 from app.db import create_all, create_db_engine, create_session_factory
-from app.models import Annotator, Assignment, Task
+from app.models import Annotator, Assignment
 
 PLAN_FIELDS = ["annotator_id", "order_index", "sample_id", "is_anchor"]
 
@@ -140,51 +141,40 @@ def cmd_apply_plan(args):
     with Path(args.plan).open(encoding="utf-8", newline="") as handle:
         plan = list(csv.DictReader(handle))
 
+    # 按标注者聚合，保持 CSV 里的 order_index 顺序
+    queues: dict[str, list[tuple[int, str, bool]]] = {}
+    for row in plan:
+        queues.setdefault(row["annotator_id"], []).append(
+            (int(row["order_index"]), row["sample_id"], bool(int(row["is_anchor"])))
+        )
+
     factory = session_factory()
     with factory() as session:
-        known_tasks = {
-            task_id: source_id
-            for task_id, source_id in session.execute(
-                select(Task.task_id, Task.source_id)
-            )
-        }
-        by_source: dict[str, list[str]] = {}
-        for task_id, source_id in known_tasks.items():
-            by_source.setdefault(source_id, []).append(task_id)
-
-        missing = {r["sample_id"] for r in plan} - by_source.keys()
-        if missing and not args.allow_missing:
+        grouped = tasks_by_sample(session)
+        known = {r["sample_id"] for r in plan} & grouped.keys()
+        absent = {r["sample_id"] for r in plan} - known
+        if absent and not args.allow_missing:
             sys.exit(
-                f"有 {len(missing)} 个样本在 tasks 表里没有对应任务，"
+                f"有 {len(absent)} 个样本在 tasks 表里没有对应任务，"
                 "请先导入素材，或加 --allow-missing 跳过"
             )
 
-        annotators = {r["annotator_id"] for r in plan}
-        session.execute(
-            delete(Assignment).where(
-                Assignment.phase == args.phase,
-                Assignment.annotator_id.in_(annotators),
-            )
-        )
-
         written = 0
-        for row in plan:
-            for task_id in sorted(by_source.get(row["sample_id"], [])):
-                session.add(
-                    Assignment(
-                        annotator_id=row["annotator_id"],
-                        task_id=task_id,
-                        phase=args.phase,
-                        order_index=int(row["order_index"]),
-                        is_anchor=bool(int(row["is_anchor"])),
-                    )
-                )
-                written += 1
+        for annotator_id, rows in queues.items():
+            rows.sort()
+            count, _ = replace_assignments(
+                session,
+                annotator_id,
+                args.phase,
+                [(sample_id, is_anchor) for _, sample_id, is_anchor in rows],
+                grouped,
+            )
+            written += count
         session.commit()
 
-    print(f"已写入 {written} 条分配（覆盖 {len(annotators)} 位标注者的 {args.phase} 阶段）")
-    if missing:
-        print(f"跳过 {len(missing)} 个尚无素材的样本")
+    print(f"已写入 {written} 条分配（覆盖 {len(queues)} 位标注者的 {args.phase} 阶段）")
+    if absent:
+        print(f"跳过 {len(absent)} 个尚无素材的样本")
 
 
 def cmd_status(args):

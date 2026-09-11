@@ -2,14 +2,16 @@ import secrets
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .auth import get_session
+from .assignments import replace_assignments, tasks_by_sample
+from .auth import get_session, hash_token, new_token
 from .export import build_export
-from .models import Annotator, Assignment, Attempt, Submission
+from .models import Annotator, Assignment, Attempt, AttemptFlag, Submission
+from .config import PHASES
 from .timeutils import to_utc_iso
 
 router = APIRouter(prefix="/api/admin")
@@ -134,3 +136,147 @@ def admin_ui() -> FileResponse:
     """管理页本身不鉴权——它只是一个空壳，令牌由使用者在页面里填，
     数据请求仍走上面那些带 require_admin 的接口。"""
     return FileResponse(Path(__file__).parent / 'static' / 'admin.html')
+
+
+# --------------------------------------------------------------- 写操作（T7）
+
+
+@router.post("/annotators", dependencies=[Depends(require_admin)])
+def create_annotators(
+    session: Session = Depends(get_session),
+    count: int = Body(..., embed=True, ge=1, le=200),
+    phase: str = Body(..., embed=True),
+    prefix: str = Body("A", embed=True),
+    display_name_prefix: str = Body("", embed=True),
+    base_url: str = Body("", embed=True),
+) -> dict:
+    """批量建号。明文令牌**只在本次响应里出现一次**，服务器只存哈希。"""
+    if phase not in PHASES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"阶段只能是 {PHASES}。")
+    existing = set(session.scalars(select(Annotator.annotator_id)))
+    created, skipped = [], []
+    for number in range(1, count + 1):
+        annotator_id = f"{prefix}-{number:02d}"
+        if annotator_id in existing:
+            skipped.append(annotator_id)
+            continue
+        token = new_token()
+        session.add(
+            Annotator(
+                annotator_id=annotator_id,
+                token_hash=hash_token(token),
+                display_name=f"{display_name_prefix}{number:02d}"
+                if display_name_prefix
+                else None,
+                phase=phase,
+            )
+        )
+        created.append(
+            {
+                "annotator_id": annotator_id,
+                "phase": phase,
+                "token": token,
+                "url": f"{base_url.rstrip('/')}/?t={token}" if base_url else None,
+            }
+        )
+    session.commit()
+    return {"created": created, "skipped": skipped}
+
+
+@router.patch("/annotators/{annotator_id}", dependencies=[Depends(require_admin)])
+def update_annotator(
+    annotator_id: str,
+    session: Session = Depends(get_session),
+    active: bool | None = Body(None, embed=True),
+    display_name: str | None = Body(None, embed=True),
+) -> dict:
+    annotator = session.get(Annotator, annotator_id)
+    if annotator is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "没有这个标注者。")
+    if active is not None:
+        annotator.active = active
+    if display_name is not None:
+        annotator.display_name = display_name
+    session.commit()
+    return {
+        "annotator_id": annotator.annotator_id,
+        "active": annotator.active,
+        "display_name": annotator.display_name,
+    }
+
+
+@router.put(
+    "/assignments/{annotator_id}", dependencies=[Depends(require_admin)]
+)
+def set_assignments(
+    annotator_id: str,
+    session: Session = Depends(get_session),
+    phase: str = Body(..., embed=True),
+    queue: list[dict] = Body(..., embed=True),
+) -> dict:
+    """整体替换某人某阶段的队列。queue 每项 {sample_id, is_anchor?}，顺序即队列顺序。"""
+    if session.get(Annotator, annotator_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "没有这个标注者。")
+    if phase not in PHASES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"阶段只能是 {PHASES}。")
+    written, missing = replace_assignments(
+        session,
+        annotator_id,
+        phase,
+        [(item["sample_id"], bool(item.get("is_anchor"))) for item in queue],
+        tasks_by_sample(session),
+    )
+    session.commit()
+    return {"written": written, "missing_samples": missing}
+
+
+@router.get("/attempts", dependencies=[Depends(require_admin)])
+def list_attempts(
+    annotator: str | None = None, session: Session = Depends(get_session)
+) -> list[dict]:
+    """轮次列表，带当前处置标记，供管理端挑出要作废的那一轮。"""
+    query = select(Attempt).order_by(Attempt.server_received_at.desc())
+    if annotator:
+        query = query.where(Attempt.annotator_id == annotator)
+    latest_flag = {}
+    for flag in session.scalars(select(AttemptFlag).order_by(AttemptFlag.flagged_at)):
+        latest_flag[flag.attempt_id] = flag.flag
+    return [
+        {
+            "attempt_id": a.attempt_id,
+            "annotator_id": a.annotator_id,
+            "task_id": a.task_id,
+            "modality": a.modality,
+            "mode": a.mode,
+            "status": a.status,
+            "sample_count": a.sample_count,
+            "received_at": _iso(a.server_received_at),
+            "flag": latest_flag.get(a.attempt_id),
+        }
+        for a in session.scalars(query)
+    ]
+
+
+@router.post("/attempts/{attempt_id}/flags", dependencies=[Depends(require_admin)])
+def flag_attempt(
+    attempt_id: str,
+    session: Session = Depends(get_session),
+    flag: str = Body(..., embed=True),
+    note: str = Body("", embed=True),
+    flagged_by: str = Body("admin", embed=True),
+) -> dict:
+    """标记轮次。作废是**追加一条处置记录**，不删数据——
+    原始轨迹必须留着，判断错了还能翻案。"""
+    if flag not in ("ok", "low_quality", "void"):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "标记只能是 ok / low_quality / void。"
+        )
+    if session.get(Attempt, attempt_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "没有这个轮次。")
+    session.add(
+        AttemptFlag(
+            attempt_id=attempt_id, flag=flag, note=note, flagged_by=flagged_by
+        )
+    )
+    session.commit()
+    return {"attempt_id": attempt_id, "flag": flag}

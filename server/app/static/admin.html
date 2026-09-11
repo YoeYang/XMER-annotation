@@ -53,12 +53,19 @@
   .idle { color: var(--muted); }
   .note { margin-top: 14px; color: var(--muted); font-size: 12px; }
   .err { color: #b3261e; margin: 14px 0; }
+  details { margin-top: 22px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 8px; padding: 14px 18px; }
+  summary { cursor: pointer; font-weight: 600; }
+  details .bar { margin: 14px 0 0; }
+  select { font: inherit; padding: 7px 11px; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--surface); }
+  code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>标注进度</h1>
-  <p class="sub">只读视图。分配与质量管理在 T7。</p>
+  <p class="sub">进度总览、账号发放与轮次处置。</p>
 
   <div class="bar">
     <input type="password" id="tok" placeholder="管理员令牌" autocomplete="off">
@@ -80,6 +87,35 @@
       <tbody id="rows"></tbody>
     </table>
   </div>
+  <details id="panel-new">
+    <summary>批量生成账号</summary>
+    <div class="bar">
+      <input type="text" id="np" placeholder="前缀，如 P1" value="P1">
+      <input type="text" id="nc" placeholder="人数" value="8" style="min-width:80px">
+      <select id="nph">
+        <option value="pilot">试标</option>
+        <option value="training">培训</option>
+        <option value="main">正式</option>
+      </select>
+      <button id="mk">生成并下载链接 CSV</button>
+    </div>
+    <p class="note">明文令牌只在这一次下载里出现，服务器只存哈希。重跑已存在的编号会被跳过，不会换掉已发出的链接。</p>
+  </details>
+
+  <details id="panel-att">
+    <summary>轮次处置</summary>
+    <div class="bar">
+      <input type="text" id="who" placeholder="标注者编号，留空看全部">
+      <button id="la">载入轮次</button>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr><th>轮次</th><th>标注者</th><th>任务</th><th>模态</th>
+        <th class="num">采样</th><th>状态</th><th>处置</th><th></th></tr></thead>
+      <tbody id="arows"></tbody>
+    </table></div>
+    <p class="note">作废只是追加一条处置记录，原始轨迹保留——判断错了还能翻案。</p>
+  </details>
+
   <p class="note">
     「已开始」「已提交」按任务去重计数：同一任务提交多个版本仍算一个。
     单人导出的结构与 V1 一致，可直接交给 <code>scripts/plot_va_curves.py</code>。
@@ -159,6 +195,63 @@ $("dump").addEventListener("click", async () => {
   try { save("xmer-all-" + Date.now() + ".json", await api("/export")); }
   catch (e) { fail(e.message); }
 });
+async function post(path, payload) {
+  const response = await fetch("." + path, {
+    method: payload.__method || "POST",
+    headers: { authorization: "Bearer " + token(), "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    throw new Error((detail && detail.detail) || "请求失败（" + response.status + "）");
+  }
+  return response.json();
+}
+
+$("mk").addEventListener("click", async () => {
+  try {
+    const data = await post("/annotators", {
+      count: Number($("nc").value), phase: $("nph").value,
+      prefix: $("np").value.trim(),
+      base_url: location.origin + location.pathname.replace(/\/api\/admin\/ui$/, ""),
+    });
+    if (!data.created.length) return fail("没有新建任何账号（编号都已存在）。");
+    const csv = "annotator_id,phase,token,url\n" +
+      data.created.map((r) => [r.annotator_id, r.phase, r.token, r.url].join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = "annotators-" + $("np").value.trim() + ".csv"; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    load();
+  } catch (e) { fail(e.message); }
+});
+
+const FLAGS = { ok: "正常", low_quality: "质量存疑", void: "已作废" };
+async function loadAttempts() {
+  try {
+    const who = $("who").value.trim();
+    const rows = await api("/attempts" + (who ? "?annotator=" + who : ""));
+    $("arows").innerHTML = rows.map((r) => `<tr>
+      <td><code>${r.attempt_id.slice(0, 8)}</code></td>
+      <td>${r.annotator_id}</td><td>${r.task_id}</td><td>${r.modality}</td>
+      <td class="num">${r.sample_count}</td><td>${r.status}</td>
+      <td>${r.flag ? FLAGS[r.flag] || r.flag : "<span class='idle'>—</span>"}</td>
+      <td><button data-flag="void" data-att="${r.attempt_id}">作废</button>
+          <button data-flag="low_quality" data-att="${r.attempt_id}">存疑</button>
+          <button data-flag="ok" data-att="${r.attempt_id}">正常</button></td>
+    </tr>`).join("") || "<tr><td colspan='8' class='idle'>暂无轮次</td></tr>";
+  } catch (e) { fail(e.message); }
+}
+$("la").addEventListener("click", loadAttempts);
+$("arows").addEventListener("click", async (e) => {
+  const att = e.target.dataset && e.target.dataset.att;
+  if (!att) return;
+  try {
+    await post("/attempts/" + att + "/flags", { flag: e.target.dataset.flag });
+    loadAttempts();
+  } catch (err) { fail(err.message); }
+});
+
 $("rows").addEventListener("click", async (e) => {
   const who = e.target.dataset && e.target.dataset.who;
   if (!who) return;
