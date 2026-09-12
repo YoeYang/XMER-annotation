@@ -56,3 +56,28 @@ def replace_assignments(
             )
             written += 1
     return written, missing
+
+
+# 占位符而非人名，来自 mustard 等数据集的原始元数据。
+# 展示这些对认人毫无帮助（"PERSON" 不能告诉标注者该看谁），当作无姓名处理。
+_PLACEHOLDER_NAMES = {"person", "all", "moderator", "member-girl", "others", "unknown"}
+
+
+def clean_speaker_name(raw: str | None) -> str | None:
+    """清洗说话人姓名，供素材导入时调用。
+
+    在**导入时**清洗而不是在前端过滤：脏值一旦进库，之后每个消费方
+    （前端、导出、分析脚本）都得各自再过滤一遍。
+
+    角色描述（Flight Attendant、Policeman 之类）予以保留——它们对认人有用，
+    不是脏值；只剔除纯占位符。
+    """
+    if not raw:
+        return None
+    # Windows-1252 的弯撇号被当成 latin-1 读进来的残留，如 Richard\x92s Date
+    name = raw.replace("\x92", "’").replace("\x93", '"').replace("\x94", '"')
+    name = name.strip()
+    if not name:
+        return None
+    stem = name.rstrip("0123456789").strip().lower()
+    return None if stem in _PLACEHOLDER_NAMES else name
