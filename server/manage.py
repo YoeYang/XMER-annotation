@@ -15,14 +15,22 @@ import json
 import sys
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.allocation import build_plan
 from app.assignments import replace_assignments, tasks_by_sample
 from app.auth import hash_token, new_token
 from app.config import PHASES, load_settings
 from app.db import create_all, create_db_engine, create_session_factory
-from app.models import Annotator, Assignment, Task
+from app.models import (
+    Annotator,
+    Assignment,
+    Attempt,
+    AttemptFlag,
+    SampleChunk,
+    Submission,
+    Task,
+)
 
 PLAN_FIELDS = ["annotator_id", "order_index", "sample_id", "is_anchor"]
 
@@ -211,6 +219,57 @@ def cmd_apply_plan(args):
         print(f"跳过 {len(absent)} 个尚无素材的样本")
 
 
+def cmd_seed_e2e(args):
+    """给端到端测试准备一个独立标注者，并把演示样本分配给它。
+
+    **不复用正式账号**：e2e 会真的写入轮次和提交，混进正式数据里就再也分不清
+    哪些是人标的。跑完用 drop-annotator 清掉。
+    """
+    factory = session_factory()
+    token = new_token()
+    with factory() as session:
+        existing = session.get(Annotator, args.annotator_id)
+        if existing is not None:
+            existing.token_hash = hash_token(token)
+            existing.active = True
+        else:
+            session.add(Annotator(annotator_id=args.annotator_id,
+                                  token_hash=hash_token(token),
+                                  display_name="端到端测试", phase="pilot"))
+        session.commit()
+
+        grouped = tasks_by_sample(session)
+        source = args.sample or next(iter(sorted(grouped)), None)
+        if source is None:
+            sys.exit("tasks 表为空，先导入素材")
+        replace_assignments(session, args.annotator_id, "pilot",
+                            [(source, False)], grouped)
+        session.commit()
+    print(token)
+
+
+def cmd_drop_annotator(args):
+    """删除标注者及其全部数据。e2e 收尾用。"""
+    factory = session_factory()
+    with factory() as session:
+        attempts = [a for a in session.scalars(
+            select(Attempt).where(Attempt.annotator_id == args.annotator_id))]
+        ids = [a.attempt_id for a in attempts]
+        if ids:
+            session.execute(delete(AttemptFlag).where(AttemptFlag.attempt_id.in_(ids)))
+            session.execute(delete(SampleChunk).where(SampleChunk.attempt_id.in_(ids)))
+        session.execute(delete(Submission).where(
+            Submission.annotator_id == args.annotator_id))
+        session.execute(delete(Attempt).where(
+            Attempt.annotator_id == args.annotator_id))
+        session.execute(delete(Assignment).where(
+            Assignment.annotator_id == args.annotator_id))
+        session.execute(delete(Annotator).where(
+            Annotator.annotator_id == args.annotator_id))
+        session.commit()
+    print(f"已删除 {args.annotator_id} 及其全部数据")
+
+
 def cmd_status(args):
     factory = session_factory()
     with factory() as session:
@@ -270,6 +329,15 @@ def main():
     apply_plan.add_argument("--phase", choices=PHASES, required=True)
     apply_plan.add_argument("--allow-missing", action="store_true")
     apply_plan.set_defaults(func=cmd_apply_plan)
+
+    seed = sub.add_parser("seed-e2e", help="为端到端测试准备独立账号")
+    seed.add_argument("--annotator-id", default="E2E-TEST")
+    seed.add_argument("--sample", default="")
+    seed.set_defaults(func=cmd_seed_e2e)
+
+    drop = sub.add_parser("drop-annotator", help="删除标注者及其全部数据")
+    drop.add_argument("--annotator-id", required=True)
+    drop.set_defaults(func=cmd_drop_annotator)
 
     status = sub.add_parser("status", help="查看账号与分配现状")
     status.set_defaults(func=cmd_status)

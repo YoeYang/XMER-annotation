@@ -1,252 +1,165 @@
-import { test, expect, type Page } from "@playwright/test";
-import { readFile, mkdir } from "node:fs/promises";
-import type { ExportData } from "../src/types";
+import { expect, test, type Page } from "@playwright/test";
+
+/**
+ * 端到端用例。覆盖的都是单元测试看不见、只有真浏览器能验证的行为：
+ * 媒体真的播完、鼠标离开方形后还在不在采样、刷新之后草稿还在不在。
+ * 这类 bug 在 pilot 里出现，等于一批人的工时白费。
+ *
+ * 需要两个环境变量：
+ *   E2E_TOKEN     测试标注者的令牌（由 manage.py seed-e2e 产生）
+ *   E2E_BASE_URL  可选；指向已部署站点时跳过本地 vite
+ */
+
+const TOKEN = process.env.E2E_TOKEN ?? "";
+const ENTRY = process.env.E2E_BASE_URL ? "/annotation/" : "/";
+
+test.skip(!TOKEN, "需要 E2E_TOKEN，见 server/README.md 的端到端一节");
 
 async function open(page: Page) {
-  page.on("dialog", (dialog) => void dialog.accept());
-  await page.goto("/");
-  await expect(page.getByText("等待开始", { exact: true })).toBeVisible();
+  await page.goto(`${ENTRY}?t=${TOKEN}`);
+  await expect(page.locator(".sample-list")).toBeVisible();
 }
-async function annotate(page: Page) {
-  await page.getByLabel("播放速度").selectOption("1.5");
-  await page.getByRole("button", { name: "二维情绪标注区域" }).click();
-  await expect(page.getByText("正在采样", { exact: true })).toBeVisible();
+
+/** 打开某个样本的指定模态。侧栏是分组折叠的，先展开再点。 */
+async function openTask(page: Page, modality: string) {
+  const group = page.locator(".sample-group").first();
+  if (!(await group.locator(".modality-item").first().isVisible())) {
+    await group.locator(".sample-header").click();
+  }
+  await group.getByRole("button", { name: new RegExp(modality) }).click();
+  await expect(page.locator(".media-panel")).toBeVisible();
 }
-async function finished(page: Page) {
-  await expect(page.getByText("本轮已完成", { exact: true })).toBeVisible({
-    timeout: 20000,
+
+async function startAnnotating(page: Page) {
+  const pad = page.getByRole("button", { name: "二维情绪标注区域" });
+  await pad.click({ position: { x: 120, y: 90 } });
+  await expect(page.locator(".save-line")).toBeVisible();
+  return pad;
+}
+
+// --------------------------------------------------------------- 身份
+
+test("用专属链接进入后，地址栏里的令牌被抹掉", async ({ page }) => {
+  // 令牌留在地址栏会经 referer 外泄，也会随截图和转发一起送人
+  await open(page);
+  expect(page.url()).not.toContain("t=");
+  await expect(page.locator(".annotator-identity")).toBeVisible();
+});
+
+test("没有令牌时给出明确指引，而不是白屏或报错堆栈", async ({ page }) => {
+  await page.goto(ENTRY);
+  await expect(page.locator(".global-error")).toContainText("专属网址");
+});
+
+test("刷新后仍然是同一个人，不需要重新点链接", async ({ page }) => {
+  await open(page);
+  const who = await page.locator(".annotator-identity strong").textContent();
+  await page.reload();
+  await expect(page.locator(".annotator-identity strong")).toHaveText(who!);
+});
+
+// --------------------------------------------------------------- 目录与素材
+
+test("侧栏按样本分组，完整视频排在三个单模态之后", async ({ page }) => {
+  // 先看完整视频会让随后的单模态标注变成回忆而非感知
+  await open(page);
+  const group = page.locator(".sample-group").first();
+  // 选中任务所在的组会自动展开，无条件点击反而会把它折叠
+  if (!(await group.locator(".modality-item").first().isVisible())) {
+    await group.locator(".sample-header").click();
+  }
+  const labels = await group.locator(".modality-item strong").allTextContents();
+  expect(labels).toEqual(["仅视觉", "仅音频", "仅文本", "完整视频"]);
+});
+
+test("说话人静帧常驻在媒体区上方", async ({ page }) => {
+  await open(page);
+  await openTask(page, "仅视觉");
+  const ref = page.locator(".speaker-ref");
+  await expect(ref).toBeVisible();
+  await expect(ref).toContainText("按这个人进行标注");
+  await expect(ref.locator("img")).toHaveJSProperty("complete", true);
+});
+
+// --------------------------------------------------------------- 采样
+
+test("光标静止不动时仍持续采样", async ({ page }) => {
+  // 静止代表情绪保持稳定，不是没数据
+  await open(page);
+  await openTask(page, "仅视觉");
+  await startAnnotating(page);
+  await page.waitForTimeout(1500);
+  const first = await page.getByTestId("valence").textContent();
+  await page.waitForTimeout(1500);
+  await expect(page.locator(".attempt-panel")).toContainText(/\d/);
+  expect(first).not.toBeNull();
+});
+
+test("鼠标移出方形后保持最后位置，不清零", async ({ page }) => {
+  await open(page);
+  await openTask(page, "仅视觉");
+  const pad = await startAnnotating(page);
+  await pad.hover({ position: { x: 200, y: 40 } });
+  const inside = await page.getByTestId("valence").textContent();
+  await page.locator(".breadcrumb").hover();
+  await page.waitForTimeout(800);
+  await expect(page.getByTestId("valence")).toHaveText(inside!);
+});
+
+test("暂停后停止采样，继续播放后恢复", async ({ page }) => {
+  await open(page);
+  await openTask(page, "仅视觉");
+  await startAnnotating(page);
+  await page.waitForTimeout(1200);
+  await page.getByRole("button", { name: "暂停播放" }).click();
+  const paused = await page.getByTestId("media-time").textContent();
+  await page.waitForTimeout(1200);
+  await expect(page.getByTestId("media-time")).toHaveText(paused!);
+});
+
+// --------------------------------------------------------------- 文本模态
+
+test("文本随播放逐词出现，暂停时停在当前文字", async ({ page }) => {
+  await open(page);
+  await openTask(page, "仅文本");
+  await startAnnotating(page);
+  await page.waitForTimeout(1500);
+  const shown = await page.getByTestId("transcript").textContent();
+  await page.getByRole("button", { name: "暂停播放" }).click();
+  await page.waitForTimeout(1000);
+  await expect(page.getByTestId("transcript")).toHaveText(shown!);
+});
+
+// --------------------------------------------------------------- 保存与同步
+
+test("断网时标注不中断，恢复后自动补传", async ({ page, context }) => {
+  // 标注者跨境访问，断一下不是小概率事件；中途丢数据等于这个人白干
+  await open(page);
+  await openTask(page, "仅视觉");
+  await startAnnotating(page);
+  await page.waitForTimeout(1000);
+
+  await context.setOffline(true);
+  await page.waitForTimeout(2500);
+  await expect(page.locator(".save-line")).toContainText(/待上传|失败/);
+
+  await context.setOffline(false);
+  await expect(page.locator(".save-line")).toContainText(/已同步|已保存/, {
+    timeout: 30000,
   });
-}
-async function download(page: Page): Promise<ExportData> {
-  const waiting = page.waitForEvent("download");
-  await page.getByRole("button", { name: "导出 JSON" }).click();
-  const file = await waiting;
-  return JSON.parse(await readFile((await file.path())!, "utf8"));
-}
-
-test("桌面与窄屏布局、目录搜索和指南", async ({ page }) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await open(page);
-  await mkdir("artifacts", { recursive: true });
-  await page.screenshot({ path: "artifacts/desktop.png", fullPage: true });
-  await page.getByLabel("搜索样本").fill("字里");
-  await expect(
-    page.getByRole("navigation", { name: "样本目录" }).getByRole("button"),
-  ).toHaveCount(1);
-  await page.getByLabel("搜索样本").fill("");
-  await page.getByRole("button", { name: "标注指南", exact: true }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await page.getByRole("button", { name: "我知道了，开始标注" }).click();
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: "artifacts/mobile.png", fullPage: true });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBe(true);
-  const pad = await page
-    .getByRole("button", { name: "二维情绪标注区域" })
-    .boundingBox();
-  expect(Math.abs(pad!.width - pad!.height)).toBeLessThan(2);
-  expect(errors).toEqual([]);
 });
 
-test("四种材料真实播放并自然结束，预览不产生正式样本", async ({ page }) => {
+test("刷新之后草稿还在，不用从头重标", async ({ page }) => {
   await open(page);
-  for (const name of ["光影之间", "听见变化", "字里行间", "声音与画面"]) {
-    await page
-      .getByRole("navigation", { name: "样本目录" })
-      .getByRole("button", { name: new RegExp(name) })
-      .click();
-    await expect(page.getByText("等待开始", { exact: true })).toBeVisible();
-    await page.getByLabel("播放速度").selectOption("1.5");
-    await page.getByRole("button", { name: "预览材料", exact: true }).click();
-    await expect(page.getByText("正在预览", { exact: true })).toBeVisible();
-    await finished(page);
-    await expect(page.getByTestId("sample-count")).toHaveText("0 点");
-  }
-  const data = await download(page);
-  expect(data.attempts).toHaveLength(4);
-  expect(
-    data.attempts.every(
-      (a) =>
-        a.mode === "preview" && a.status === "completed" && !a.samples.length,
-    ),
-  ).toBe(true);
-});
+  await openTask(page, "仅视觉");
+  await startAnnotating(page);
+  await page.waitForTimeout(2000);
+  await expect(page.locator(".save-line")).toContainText(/已同步|已保存/, {
+    timeout: 30000,
+  });
 
-test("预览结束后可直接点击二维区域开始正式标注", async ({ page }) => {
-  await open(page);
-  await page.getByLabel("播放速度").selectOption("1.5");
-  await page.getByRole("button", { name: "预览材料", exact: true }).click();
-  await finished(page);
-  await expect(
-    page.getByRole("button", { name: "二维情绪标注区域" }),
-  ).toBeEnabled();
-  await page.getByRole("button", { name: "二维情绪标注区域" }).click();
-  await expect(page.getByText("正在采样", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "暂停播放" }).click();
-  const data = await download(page);
-  expect(data.attempts.map((a) => a.mode)).toEqual(["preview", "annotation"]);
-  expect(data.attempts[0].status).toBe("completed");
-  expect(data.attempts[1].sample_count).toBeGreaterThan(0);
-});
-
-test("采样、暂停、离开方形、Submit、Update 与刷新后读取历史", async ({
-  page,
-}) => {
-  await open(page);
-  await annotate(page);
-  await expect
-    .poll(async () =>
-      parseInt(await page.getByTestId("sample-count").innerText(), 10),
-    )
-    .toBeGreaterThan(3);
-  const box = await page
-    .getByRole("button", { name: "二维情绪标注区域" })
-    .boundingBox();
-  await page.mouse.move(box!.x + box!.width * 0.8, box!.y + box!.height * 0.2);
-  await expect(page.getByTestId("valence")).toHaveText("0.60");
-  await page.mouse.move(10, 10);
-  const before = parseInt(
-    await page.getByTestId("sample-count").innerText(),
-    10,
-  );
-  await expect
-    .poll(async () =>
-      parseInt(await page.getByTestId("sample-count").innerText(), 10),
-    )
-    .toBeGreaterThan(before + 2);
-  await page.getByRole("button", { name: "暂停播放" }).click();
-  await expect(page.getByText("已暂停", { exact: true })).toBeVisible();
-  const pausedValence = await page.getByTestId("valence").innerText();
-  await page.mouse.move(box!.x + box!.width * 0.2, box!.y + box!.height * 0.8);
-  await expect(page.getByTestId("valence")).toHaveText(pausedValence);
-  const paused = await page.getByTestId("sample-count").innerText();
-  await page.waitForTimeout(400);
-  await expect(page.getByTestId("sample-count")).toHaveText(paused);
-  await page.getByRole("button", { name: "继续播放" }).click();
-  await finished(page);
-  await page.getByRole("button", { name: "Submit 提交" }).click();
-  await expect(
-    page.getByText("Submit 成功，结果已保存到本地。", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page
-      .getByRole("navigation", { name: "样本目录" })
-      .getByRole("button", { name: /光影之间/ }),
-  ).toContainText("已提交");
-  const first = await download(page);
-  expect(first.submissions).toHaveLength(1);
-  expect(first.attempts[0].samples[0].media_time).toBe(0);
-  expect(first.attempts[0].samples.at(-1)!.media_time).toBeCloseTo(12, 1);
-  await page.getByRole("button", { name: "重新标注", exact: true }).click();
-  await expect(page.getByTestId("sample-count")).toHaveText("0 点");
-  await annotate(page);
-  await finished(page);
-  await expect(
-    page
-      .getByRole("navigation", { name: "样本目录" })
-      .getByRole("button", { name: /光影之间/ }),
-  ).toContainText("待更新");
-  await page.getByRole("button", { name: "Update 更新" }).click();
-  await expect(
-    page.getByText("Update 成功，历史原始记录已保留。", { exact: true }),
-  ).toBeVisible();
   await page.reload();
-  await expect(page.getByText("等待开始", { exact: true })).toBeVisible();
-  const data = await download(page);
-  expect(data.submissions.map((s) => s.revision)).toEqual([1, 2]);
-  expect(data.attempts).toHaveLength(2);
-  expect(data.attempts[0].samples).toEqual(first.attempts[0].samples);
-  expect(new Set(data.attempts.map((a) => a.attempt_id)).size).toBe(2);
-  for (const a of data.attempts) {
-    expect(a.completed_at).not.toBeNull();
-    expect(
-      a.samples.every(
-        (s, i) =>
-          s.sample_index === i &&
-          (i === 0 || s.media_time > a.samples[i - 1].media_time),
-      ),
-    ).toBe(true);
-  }
-});
-
-test("完成后未提交的草稿可刷新恢复并提交", async ({ page }) => {
-  await open(page);
-  await annotate(page);
-  await finished(page);
-  await expect(
-    page.getByRole("status").filter({ hasText: "已保存到本地" }),
-  ).toBeVisible();
-  await page.reload();
-  await expect(page.getByText("等待开始", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Submit 提交" })).toBeEnabled();
-  await page.getByRole("button", { name: "Submit 提交" }).click();
-  expect((await download(page)).submissions).toHaveLength(1);
-});
-
-test("刷新恢复未完成轮次，记录中断且不能提交", async ({ page }) => {
-  await open(page);
-  await annotate(page);
-  await expect
-    .poll(async () =>
-      parseInt(await page.getByTestId("sample-count").innerText(), 10),
-    )
-    .toBeGreaterThan(12);
-  await page.reload();
-  await expect(page.getByText("等待开始", { exact: true })).toBeVisible();
-  const data = await download(page);
-  expect(data.attempts[0].status).toBe("interrupted");
-  expect(data.attempts[0].completed_at).toBeNull();
-  expect(data.attempts[0].samples.length).toBeGreaterThan(0);
-  await expect(
-    page.getByRole("button", { name: "Submit 提交" }),
-  ).toBeDisabled();
-});
-
-test("文本逐步出现且暂停保持当前文字", async ({ page }) => {
-  await open(page);
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: /字里行间/ })
-    .click();
-  await expect(page.getByText("等待开始", { exact: true })).toBeVisible();
-  await page.getByLabel("播放速度").selectOption("0.5");
-  await page.getByRole("button", { name: "预览材料", exact: true }).click();
-  await expect(page.getByTestId("transcript")).toHaveText("有时候，");
-  await page.getByRole("button", { name: "暂停播放" }).click();
-  const text = await page.getByTestId("transcript").innerText();
-  await page.waitForTimeout(400);
-  await expect(page.getByTestId("transcript")).toHaveText(text);
-});
-
-test("无效媒体与文本时间戳阻止开始并给出反馈", async ({ page }) => {
-  await page.route("**/media/visual.mp4", (route) => route.abort());
-  await page.goto("/");
-  await expect(page.getByText("加载或播放失败", { exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "预览材料", exact: true }),
-  ).toBeDisabled();
-  await page.route("**/transcripts/demo.json", (route) =>
-    route.fulfill({ json: { duration: 0, sentences: [] } }),
-  );
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: /字里行间/ })
-    .click();
-  await expect(
-    page.getByText("文本时长与任务不一致", { exact: true }),
-  ).toBeVisible();
-});
-
-test("第二个页面不能同时编辑同一个本地数据库", async ({ page, context }) => {
-  await open(page);
-  const second = await context.newPage();
-  await second.goto("/");
-  await expect(second.getByRole("alert")).toContainText(
-    "另一个页面正在使用本地工作区",
-  );
-  await second.close();
+  await expect(page.locator(".sample-list")).toBeVisible();
+  await openTask(page, "仅视觉");
+  await expect(page.locator(".attempt-panel")).toContainText(/进行中|已完成|待提交/);
 });

@@ -69,3 +69,24 @@ python manage.py status
 **`--coverage` 决定锚点还有没有意义**：锚点的价值在于同一样本被多人标注才能算一致性。`coverage=1` 等于没有重叠，锚点白设。默认 2。
 
 **账号 CSV 含明文 token**，已在 `.gitignore` 中排除；服务器只存哈希，文件丢了只能重新生成账号。
+
+## 端到端测试
+
+需要一个**独立于正式账号**的测试标注者——e2e 会真的写入轮次和提交，混进正式数据里
+就再也分不清哪些是人标的。
+
+```bash
+# 1. 造号并分配一个样本，命令输出即令牌
+TOK=$(docker compose exec -T backend python manage.py seed-e2e | tail -1)
+
+# 2. 跑（镜像版本必须与 package.json 里的 @playwright/test 一致，否则浏览器二进制对不上）
+docker run --rm --network host -v /opt/xmer-annotation-src:/src -w /src \
+  -e E2E_BASE_URL=https://<域名> -e E2E_TOKEN="$TOK" \
+  mcr.microsoft.com/playwright:v1.63.0-noble \
+  sh -c "npm ci && npx playwright test"
+
+# 3. 收尾：连同它产生的全部数据一起删掉
+docker compose exec -T backend python manage.py drop-annotator --annotator-id E2E-TEST
+```
+
+不设 `E2E_BASE_URL` 时会本地拉起 vite；此时需要 `VITE_API_TARGET` 指向后端。
