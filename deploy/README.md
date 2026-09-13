@@ -46,13 +46,38 @@ compose 用 `env_file:` 直接喂给容器，**不做变量插值**。这样裸�
 配套地，`load_settings()` 在缺 `XMER_DATABASE_URL` 时**直接抛错**而不是回落 SQLite——
 这个服务会写标注数据和建账号，"不知道自己在写哪个库"比起不来危险得多。
 
-## 建表与 Alembic
+## 表结构与迁移（Alembic）
 
-容器启动时跑 `create_all`（幂等）。**Alembic 推迟到 P1 pilot 开跑前引入**，理由是现在
-库里没有任何真实标注数据，而 T4/T6/T7 还会改 schema，此时写迁移是给会变的表做无用功。
+**表结构一律走 Alembic，`create_all` 已从启动路径移除。** 容器启动命令是
+`alembic upgrade head && uvicorn ...`，迁移脚本在 `server/migrations/`。
 
-代价要记清楚：**`create_all` 不会 ALTER 已存在的表**。在 P1 之前改了模型，需要手动
-drop 掉相关表让它重建；一旦有了真实标注数据，就必须先上 Alembic 再改 schema。
+基准版本 **`a5434311ec63`**（2026-09-13 建立，对应 V2 的七张表）。生产库原本的表是
+`create_all` 建的，Alembic 并不知道它们存在，因此上线时先 `stamp` 标记、不重建：
+
+```bash
+docker compose build backend
+docker compose run --rm backend alembic stamp head   # 只有首次接管时需要
+docker compose up -d backend
+```
+
+**为什么必须用它**：`create_all` 只建不存在的表，永远不会 ALTER。改了模型之后新库看着正常，
+线上老表却没有新列，唯一补救是 drop 重建 = 真实标注数据全没。
+
+**改了 `app/models.py` 之后必须生成迁移**：
+
+```bash
+XMER_DATABASE_URL=sqlite+pysqlite:///tmp.db python3 -m alembic revision --autogenerate -m "说明"
+```
+
+`tests/test_migrations.py` 会拦住"改了模型忘记生成迁移"——它在空库上跑完全部迁移，
+再与模型比对，有差异就失败。
+
+**JSON 列的渲染**由 `migrations/env.py` 的 `render_item` 钩子指向 `app.models.JsonCol`。
+没有它，autogenerate 会输出缺 `sa.` 前缀的 `Text()`，生成的脚本一跑就 NameError——
+每次碰到 JSON 列都会重犯，所以修在钩子里而不是手改生成的文件。
+
+**Alembic 只管表的形状，不管表里的数据。** 重新分配样本、替换标注结果、调整队列
+都走应用层（`manage.py apply-plan` 或管理端接口），与迁移无关。
 
 ## 备份
 

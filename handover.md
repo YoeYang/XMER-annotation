@@ -567,3 +567,50 @@ P1 的真实阻塞项见上方 🚩 小节（e2e 重写 / Alembic / 素材与静
 
 文本逐词时间戳的来源（人工 / 字幕文件 / 强制对齐）未定。示例样本用的是按字符数近似匀速分配，
 正式标注不能沿用。这个定了才能写预处理流水线。
+
+---
+
+## 2026-09-13 — Alembic 接管表结构 + 全量素材就绪
+
+### 表结构改由 Alembic 管理（基准 `a5434311ec63`）
+
+`create_all` 已从容器启动路径移除，改为 `alembic upgrade head`。生产库已 `stamp` 在基准版本，
+20 个账号与既有数据完好。详见 `deploy/README.md` 的「表结构与迁移」一节。
+
+**改了 `app/models.py` 必须生成迁移**，`tests/test_migrations.py` 会拦住漏生成的情况。
+
+**Alembic 只管表的形状**：重新分配样本、替换标注数据都走应用层，与迁移无关。
+
+### 全量素材已就绪（尚未上传 ECS）
+
+| 产物 | 位置 | 规模 |
+| --- | --- | --- |
+| 词级对齐 | `07-text-alignment/out/align/` | 3440/3440 零失败，47529 token |
+| 四模态素材 | `08-material-prep/out/media/` | 3440 样本，**7.4 GB** |
+| 转录稿 | `08-material-prep/out/transcripts/` | 3440 份，全部通过标注页校验 |
+| 导入清单 | `08-material-prep/out/tasks_import.json` | **13760 个任务**，6.5 MB |
+
+**文本时间戳方案已定：强制对齐，不做语音识别。** 模型只把数据集已有的转录稿摆到时间轴上，
+改不了词——标注者读到的句子必须逐 token 等于数据集转录稿，否则与 04 的冲突标签对不上。
+`07-text-alignment` 里有硬断言守这条。听审页（21 条含笑声样本）：
+<https://claude.ai/code/artifact/6b1a87a5-e979-4998-b111-8bbb88319886>
+
+### 素材处理的三处特殊情况（改动流水线时勿踩）
+
+1. **MUStARD 的 `video.mp4` 没有音轨**，声音在同目录 `audio.wav`，完整视频要手动合入。
+2. **MELD 音轨是 5.1 六声道**，不下混浏览器放不出声。
+3. **转录稿 token 时长必须为正**：插值定位的标点是零时长，直接落盘会被标注页整个拒收。
+
+### 平台坑：登录节点 ARM，计算节点 x86
+
+`small`/`test` 分区是 **x86_64**，登录节点与 GH200 GPU 分区是 **arm64**。
+pytorch 与 ffmpeg 模块都是 ARM 容器，在 x86 计算节点上**跑不起来也拿不到**。
+对齐作业投 `gpumedium`（ARM + GPU，3440 条约 2 分钟）；素材处理只用 ffmpeg，
+在登录节点 8 进程并行约 20 分钟。
+
+### 下一步
+
+1. 上传 7.4 GB 素材到 ECS（`/opt/xmer-label/annotation-static/media/pool/`）
+2. `manage.py import-tasks --file tasks_import.json`（8 → 13768 条任务）
+3. `manage.py apply-plan --plan plans/assignment_plan_P3.csv --phase main`
+4. 🚩 重写 Playwright e2e —— P1 开跑前的最后一个阻塞项
