@@ -1,6 +1,28 @@
 import type { Modality, Phase } from "./types";
 export const SAMPLE_RATE_HZ = 10;
 export const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5];
+const RATE_KEY = "xmer.playback_rate";
+/**
+ * 倍速跨任务、跨刷新保持。
+ * 微表情细微的样本要放慢才标得动，而一个人一次要标几十个任务，
+ * 每换一个就重选一次倍速太折腾。
+ * 浏览器可能禁用存储（隐私模式），读写都得能失败。
+ */
+export function rememberedRate(): number {
+  try {
+    const value = Number(localStorage.getItem(RATE_KEY));
+    return PLAYBACK_RATES.includes(value) ? value : 1;
+  } catch {
+    return 1;
+  }
+}
+export function rememberRate(rate: number): void {
+  try {
+    localStorage.setItem(RATE_KEY, String(rate));
+  } catch {
+    // 存不下就只在本次会话里生效，不该因此中断标注
+  }
+}
 export const MODALITY_LABELS: Record<Modality, string> = {
   visual: "仅视觉",
   audio: "仅音频",

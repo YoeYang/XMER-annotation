@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizePoint, Sampler } from "../src/core/sampler";
+import { rememberedRate, rememberRate } from "../src/config";
 import {
   silentWav,
   transcriptTokens,
@@ -152,5 +153,45 @@ describe("文本与任务时间轴", () => {
     expect(view.getUint32(40, true) / view.getUint32(28, true)).toBe(12);
     expect(() => silentWav(Infinity)).toThrow();
     expect(() => silentWav(3601)).toThrow();
+  });
+});
+
+describe("倍速记忆", () => {
+  const fake = () => {
+    const store = new Map<string, string>();
+    return {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    };
+  };
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis, "localStorage");
+  });
+
+  it("记住上次选的倍速，换任务和刷新后都还在", () => {
+    Object.defineProperty(globalThis, "localStorage", {
+      value: fake(),
+      configurable: true,
+    });
+    expect(rememberedRate()).toBe(1);
+    rememberRate(0.5);
+    expect(rememberedRate()).toBe(0.5);
+  });
+
+  it("存储被禁用或值不合法时退回 1 倍速，不抛错", () => {
+    Object.defineProperty(globalThis, "localStorage", {
+      get() {
+        throw new Error("隐私模式下禁用");
+      },
+      configurable: true,
+    });
+    expect(rememberedRate()).toBe(1);
+    expect(() => rememberRate(0.5)).not.toThrow();
+
+    Object.defineProperty(globalThis, "localStorage", {
+      value: { getItem: () => "9", setItem: () => {} },
+      configurable: true,
+    });
+    expect(rememberedRate()).toBe(1);
   });
 });

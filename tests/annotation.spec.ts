@@ -138,6 +138,22 @@ test("暂停后停止采样，继续播放后恢复", async ({ page }) => {
 
 // --------------------------------------------------------------- 文本模态
 
+test("选过的倍速在换任务和刷新之后仍然保持", async ({ page }) => {
+  // 微表情细微的样本要放慢才标得动，一个人几十个任务不该每次重选
+  await open(page);
+  await openTask(page, "仅视觉");
+  const speed = page.getByLabel("播放速度");
+  await speed.selectOption("0.5");
+
+  await openTask(page, "仅音频");
+  await expect(page.getByLabel("播放速度")).toHaveValue("0.5");
+
+  await page.reload();
+  await expect(page.locator(".sample-list")).toBeVisible();
+  await openTask(page, "仅视觉");
+  await expect(page.getByLabel("播放速度")).toHaveValue("0.5");
+});
+
 test("整段文字常驻，高亮随播放推进且暂停即停", async ({ page }) => {
   await open(page);
   await openTask(page, "仅文本");

@@ -1,4 +1,4 @@
-import { SAMPLE_RATE_HZ } from "../config";
+import { rememberedRate, rememberRate, SAMPLE_RATE_HZ } from "../config";
 import type {
   Attempt,
   ExportData,
@@ -30,7 +30,7 @@ export class AnnotationSession {
       phase: "loading",
       time: 0,
       duration: task.duration,
-      rate: 1,
+      rate: rememberedRate(),
       point: null,
       attempt: null,
       save: "idle",
@@ -354,6 +354,7 @@ export class AnnotationSession {
   }
   setRate(rate: number) {
     this.view.rate = rate;
+    rememberRate(rate);
     if (this.media) this.media.playbackRate = rate;
     if (this.active()) {
       this.event("rate_change");
