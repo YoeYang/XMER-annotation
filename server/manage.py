@@ -3,6 +3,7 @@
 
   create-annotators  批量生成标注账号，导出专属链接（明文 token 只出现这一次）
   assign-display-ids 给样本发放对标注者可见的编号（S0001…），导出映射 CSV
+  set-durations      素材重新处理后，按实测值校正任务时长
   plan               生成分配计划 CSV，可在表格软件里手改后再回填
   apply-plan         把（可能已手改的）计划 CSV 写入数据库
   status             查看账号与分配现状
@@ -291,6 +292,28 @@ def cmd_assign_display_ids(args):
     print(f"共 {len(mapping)} 个样本，映射表写入 {path}")
 
 
+def cmd_set_durations(args):
+    """按 {task_id: 秒数} 批量校正任务时长。
+
+    素材重新处理后必须跟着跑一次：前端在加载时会核对媒体实际时长与任务清单，
+    差超过 0.25 秒就判定素材与清单不一致、拒绝打开这个任务。
+    """
+    payload = json.loads(Path(args.file).read_text("utf-8"))
+    factory = session_factory()
+    changed = missing = 0
+    with factory() as session:
+        for task_id, duration in payload.items():
+            row = session.get(Task, task_id)
+            if row is None:
+                missing += 1
+                continue
+            if abs(row.duration - float(duration)) > 1e-6:
+                row.duration = float(duration)
+                changed += 1
+        session.commit()
+    print(f"时长校正：更新 {changed}，清单里没有的任务 {missing}")
+
+
 def cmd_status(args):
     factory = session_factory()
     with factory() as session:
@@ -364,6 +387,10 @@ def main():
     display.add_argument("--seed", type=int, default=20260914)
     display.add_argument("--out", default="display_ids.csv")
     display.set_defaults(func=cmd_assign_display_ids)
+
+    durations = sub.add_parser("set-durations", help="按 JSON 批量校正任务时长")
+    durations.add_argument("--file", required=True, help="{task_id: 秒数}")
+    durations.set_defaults(func=cmd_set_durations)
 
     status = sub.add_parser("status", help="查看账号与分配现状")
     status.set_defaults(func=cmd_status)
