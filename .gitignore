@@ -15,3 +15,6 @@ server/*.db
 
 # 标注者链接含明文 token，绝不入库
 server/**/annotators*.csv
+
+# 标注导出含原始逐点数据，体积大且随时可从服务器重新导出
+scripts/*_export.json

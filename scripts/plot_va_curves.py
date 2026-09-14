@@ -137,44 +137,65 @@ def draw_arousal_ref(ax):
     ins.tick_params(length=0)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("export")
-    ap.add_argument("--out", default=".")
-    ap.add_argument("--sample-name", default="meld_dia11_utt9")
-    args = ap.parse_args()
-
-    export = json.load(open(args.export, encoding="utf-8"))
-    series = pick_series(export)
+def render(export: dict, sample_id: str, outdir: Path) -> None:
+    """One figure per sample: the four modality curves overlaid."""
+    subset = {
+        **export,
+        "submissions": [
+            s for s in export.get("submissions", [])
+            if s["task_id"].split("::")[0] == sample_id
+        ],
+    }
+    series = pick_series(subset)
     if not series:
-        sys.exit("no annotated samples found in export")
+        print("skip", sample_id, "(no submitted annotation)")
+        return
     tmax = max(s["t"].max() for s in series.values())
-    outdir = Path(args.out)
-    outdir.mkdir(parents=True, exist_ok=True)
 
-    def finish(fig, ax, title, fname):
-        style_axes(ax, tmax)
-        ax.set_title(title, fontsize=13, pad=12)
-        ax.legend(loc="upper right", frameon=False, fontsize=9)
-        draw_arousal_ref(ax)
-        fig.text(0.5, 0.005,
-                 f"sample {args.sample_name} · annotator {export.get('annotator_id','?')}"
-                 " · band width encodes arousal (wider = more aroused)",
-                 ha="center", fontsize=8, color="#888")
-        fig.tight_layout(rect=(0, 0.03, 1, 1))
-        p = outdir / fname
-        fig.savefig(p, dpi=150)
-        plt.close(fig)
-        print("wrote", p)
-
-    # all four overlaid (only output)
     fig, ax = plt.subplots(figsize=(10, 5))
     for mod in ("audiovisual", "visual", "audio", "text"):
         if mod in series:
             lbl, col = MODALITY_STYLE[mod]
             draw_curve(ax, series[mod], col, lbl)
-    finish(fig, ax, "Emotion over time — all four annotations",
-           "va_all_four.png")
+    style_axes(ax, tmax)
+    ax.set_title("Emotion over time — all four annotations", fontsize=13, pad=12)
+    ax.legend(loc="upper right", frameon=False, fontsize=9)
+    draw_arousal_ref(ax)
+    fig.text(0.5, 0.005,
+             f"sample {sample_id} · annotator {export.get('annotator_id','?')}"
+             f" · {len(series)}/4 modalities"
+             " · band width encodes arousal (wider = more aroused)",
+             ha="center", fontsize=8, color="#888")
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
+    path = outdir / f"va_{sample_id}.png"
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print("wrote", path)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("export")
+    ap.add_argument("--out", default=".")
+    ap.add_argument("--sample", help="只画这一个样本；不给就把导出里的样本全画")
+    args = ap.parse_args()
+
+    export = json.load(open(args.export, encoding="utf-8"))
+    samples = sorted(
+        {s["task_id"].split("::")[0] for s in export.get("submissions", [])}
+    )
+    if args.sample:
+        if args.sample not in samples:
+            sys.exit(f"导出里没有样本 {args.sample}")
+        samples = [args.sample]
+    if not samples:
+        sys.exit("no annotated samples found in export")
+
+    outdir = Path(args.out)
+    outdir.mkdir(parents=True, exist_ok=True)
+    for sample_id in samples:
+        render(export, sample_id, outdir)
+    print(f"共 {len(samples)} 个样本")
 
 
 if __name__ == "__main__":
