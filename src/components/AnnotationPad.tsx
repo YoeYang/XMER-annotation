@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { MousePointer2 } from "lucide-react";
 import type { Point, SessionView } from "../types";
 import { normalizePoint } from "../core/sampler";
+import CurvePanel from "./CurvePanel";
 interface Props {
   view: SessionView;
   onStart: (point: Point) => void;
@@ -152,6 +153,13 @@ export default function AnnotationPad({
         <MousePointer2 size={14} />
         无需按住鼠标；离开区域后保持最后位置。
       </p>
+      {completedAnnotation && view.attempt && (
+        <CurvePanel
+          curve={view.curve}
+          modality={view.attempt.modality}
+          duration={view.duration}
+        />
+      )}
     </section>
   );
 }

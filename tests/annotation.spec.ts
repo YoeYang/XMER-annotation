@@ -138,6 +138,22 @@ test("暂停后停止采样，继续播放后恢复", async ({ page }) => {
 
 // --------------------------------------------------------------- 文本模态
 
+test("曲线图在标注结束后才出现在罗盘下方", async ({ page }) => {
+  // 标注过程中就看到自己的曲线，人会跟着曲线走而不是跟着材料走
+  await open(page);
+  await openTask(page, "仅视觉");
+  const curve = page.locator(".curve-panel");
+  await expect(curve).toHaveCount(0);
+
+  await startAnnotating(page);
+  await page.waitForTimeout(1200);
+  await expect(curve).toHaveCount(0);
+
+  await expect(curve).toBeVisible({ timeout: 30000 });
+  await expect(curve).toContainText("本轮曲线");
+  await expect(curve.locator("svg path")).toHaveCount(2);
+});
+
 test("选过的倍速在换任务和刷新之后仍然保持", async ({ page }) => {
   // 微表情细微的样本要放慢才标得动，一个人几十个任务不该每次重选
   await open(page);

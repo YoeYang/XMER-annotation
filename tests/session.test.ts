@@ -73,6 +73,22 @@ describe("完整标注轮次状态", () => {
       (await repository.submit(data.attempts[0].attempt_id)).revision,
     ).toBe(1);
   });
+  it("曲线留在内存里供标注后回看，落盘清空 pending 也不受影响", async () => {
+    // 罗盘下方的回看图画的是 view.curve；pending 在 checkpoint 后会被清空
+    const { session, media } = setup();
+    await session.start("annotation", { valence: 0.3, arousal: 0.5 });
+    expect(session.view.curve).toHaveLength(1);
+    media.finish();
+    await session.flush();
+    expect(session.view.curve.map((s) => s.media_time)).toEqual([0, 12]);
+    expect(session.view.curve[0].valence).toBe(0.3);
+
+    // 重新标注开新一轮，曲线要跟着清零，不能把上一轮接上去
+    await session.reset();
+    await session.start("annotation", { valence: -0.4, arousal: 0 });
+    expect(session.view.curve).toHaveLength(1);
+    expect(session.view.curve[0].valence).toBe(-0.4);
+  });
   it("暂停、后台、缓冲停止采样，保留控制事件与实际倍速", async () => {
     const { session, media } = setup();
     await session.start("annotation", { valence: 0, arousal: 0 });

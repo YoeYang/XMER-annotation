@@ -102,6 +102,8 @@ export interface SessionView {
   rate: number;
   point: Point | null;
   attempt: Attempt | null;
+  // 本轮的采样点，标注结束后在罗盘下方画成曲线；只留在内存里
+  curve: Sample[];
   save: "idle" | "saving" | "saved" | "error";
   savedAt: string | null;
   error: string | null;
