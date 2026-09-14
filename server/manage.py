@@ -3,6 +3,7 @@
 
   create-annotators  批量生成标注账号，导出专属链接（明文 token 只出现这一次）
   assign-display-ids 给样本发放对标注者可见的编号（S0001…），导出映射 CSV
+  reissue-token      给已有账号换新令牌（明文丢了只能这样找回入口，数据保留）
   set-durations      素材重新处理后，按实测值校正任务时长
   plan               生成分配计划 CSV，可在表格软件里手改后再回填
   apply-plan         把（可能已手改的）计划 CSV 写入数据库
@@ -292,6 +293,24 @@ def cmd_assign_display_ids(args):
     print(f"共 {len(mapping)} 个样本，映射表写入 {path}")
 
 
+def cmd_reissue_token(args):
+    """给已有账号换一个新令牌。
+
+    服务器只存哈希，明文丢了找不回来。换令牌**不动账号本身**：
+    分配、轮次、提交全部保留，只是旧链接立刻失效。
+    """
+    factory = session_factory()
+    with factory() as session:
+        annotator = session.get(Annotator, args.annotator_id)
+        if annotator is None:
+            sys.exit(f"没有这个账号：{args.annotator_id}")
+        token = new_token()
+        annotator.token_hash = hash_token(token)
+        session.commit()
+    print(f"{args.annotator_id} 的新链接（旧链接已失效）：")
+    print(f"{args.base_url.rstrip('/')}/?t={token}")
+
+
 def cmd_set_durations(args):
     """按 {task_id: 秒数} 批量校正任务时长。
 
@@ -387,6 +406,11 @@ def main():
     display.add_argument("--seed", type=int, default=20260914)
     display.add_argument("--out", default="display_ids.csv")
     display.set_defaults(func=cmd_assign_display_ids)
+
+    reissue = sub.add_parser("reissue-token", help="给已有账号换新令牌，数据保留")
+    reissue.add_argument("--annotator-id", required=True)
+    reissue.add_argument("--base-url", required=True)
+    reissue.set_defaults(func=cmd_reissue_token)
 
     durations = sub.add_parser("set-durations", help="按 JSON 批量校正任务时长")
     durations.add_argument("--file", required=True, help="{task_id: 秒数}")

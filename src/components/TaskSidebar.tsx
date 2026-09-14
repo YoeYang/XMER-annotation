@@ -252,15 +252,17 @@ export default function TaskSidebar({
         })}
         {!groups.length && <p className="empty-list">没有匹配的样本</p>}
       </nav>
+      {/* V1 的旧文案写着"结果保存在当前浏览器、请及时导出备份"——
+          现在结果直接进云端数据库，那句话会让人以为关掉浏览器就丢数据 */}
       <div className="sidebar-foot">
         <i className="dot teal" />
         <span>
-          本地工作区 <small>V1.0</small>
+          云端工作区 <small>V3.0</small>
         </span>
         <p>
-          结果保存在当前浏览器
+          结果自动同步到服务器
           <br />
-          请及时导出备份
+          断网可继续标注，恢复后补传
         </p>
       </div>
     </aside>

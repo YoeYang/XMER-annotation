@@ -6,7 +6,7 @@
 from sqlalchemy.orm import Session
 
 from app.assignments import assign_display_ids
-from app.models import Task
+from app.models import Assignment, Task
 
 MODALITIES = ["visual", "audio", "text", "audiovisual"]
 
@@ -91,3 +91,37 @@ def test_同一个种子给出同样的编号(session: Session, engine) -> None:
         twice = assign_display_ids(other, seed=777)
         other.rollback()
     assert once == twice
+
+
+def test_换令牌后旧链接失效_新链接可用且数据保留(
+    client, session: Session, annotator
+) -> None:
+    """明文令牌丢了只能重发。重发不该动账号本身的任何数据。"""
+    from app.auth import hash_token, new_token
+
+    make_samples(session, ["meld_dia11_utt9"])
+    session.add(
+        Assignment(
+            annotator_id=annotator.annotator_id,
+            task_id="meld_dia11_utt9::visual",
+            phase="pilot",
+            order_index=0,
+            is_anchor=False,
+        )
+    )
+    session.commit()
+
+    head = {"Authorization": "Bearer token-a001"}
+    before = client.get("/api/me", headers=head)
+    assert before.status_code == 200
+    tasks_before = before.json()["tasks"]
+
+    fresh = new_token()
+    annotator.token_hash = hash_token(fresh)
+    session.commit()
+
+    assert client.get("/api/me", headers=head).status_code == 401
+    after = client.get("/api/me", headers={"Authorization": f"Bearer {fresh}"})
+    assert after.status_code == 200
+    assert after.json()["annotator_id"] == annotator.annotator_id
+    assert after.json()["tasks"] == tasks_before
