@@ -2,8 +2,6 @@
   {
     "task_id": "DEMO-001",
     "media_id": "demo-visual",
-    "source_id": "demo-synthetic-01",
-    "title": "光影之间",
     "modality": "visual",
     "src": "/media/visual.mp4",
     "duration": 12,
@@ -11,13 +9,12 @@
     "demo": true,
     "timeline_origin": 0,
     "speaker_ref_src": null,
-    "speaker_name": null
+    "speaker_name": null,
+    "display_id": "S0001"
   },
   {
     "task_id": "DEMO-002",
     "media_id": "demo-audio",
-    "source_id": "demo-synthetic-01",
-    "title": "听见变化",
     "modality": "audio",
     "src": "/media/audio.wav",
     "duration": 12,
@@ -25,13 +22,12 @@
     "demo": true,
     "timeline_origin": 0,
     "speaker_ref_src": null,
-    "speaker_name": null
+    "speaker_name": null,
+    "display_id": "S0001"
   },
   {
     "task_id": "DEMO-003",
     "media_id": "demo-text",
-    "source_id": "demo-synthetic-01",
-    "title": "字里行间",
     "modality": "text",
     "src": "/transcripts/demo.json",
     "duration": 12,
@@ -39,13 +35,12 @@
     "demo": true,
     "timeline_origin": 0,
     "speaker_ref_src": null,
-    "speaker_name": null
+    "speaker_name": null,
+    "display_id": "S0001"
   },
   {
     "task_id": "DEMO-004",
     "media_id": "demo-audiovisual",
-    "source_id": "demo-synthetic-01",
-    "title": "声音与画面",
     "modality": "audiovisual",
     "src": "/media/audiovisual.mp4",
     "duration": 12,
@@ -53,13 +48,12 @@
     "demo": true,
     "timeline_origin": 0,
     "speaker_ref_src": null,
-    "speaker_name": null
+    "speaker_name": null,
+    "display_id": "S0001"
   },
   {
     "task_id": "EXAMPLE-001",
     "media_id": "example-visual",
-    "source_id": "meld_dia11_utt9",
-    "title": "真实样本 · 仅视觉",
     "modality": "visual",
     "src": "/media/example/visual.mp4",
     "duration": 6.715,
@@ -67,13 +61,12 @@
     "demo": false,
     "timeline_origin": 0,
     "speaker_ref_src": "/media/example/speaker.jpg",
-    "speaker_name": "Phoebe"
+    "speaker_name": "Phoebe",
+    "display_id": "S0002"
   },
   {
     "task_id": "EXAMPLE-002",
     "media_id": "example-audio",
-    "source_id": "meld_dia11_utt9",
-    "title": "真实样本 · 仅音频",
     "modality": "audio",
     "src": "/media/example/audio.wav",
     "duration": 6.715,
@@ -81,13 +74,12 @@
     "demo": false,
     "timeline_origin": 0,
     "speaker_ref_src": "/media/example/speaker.jpg",
-    "speaker_name": "Phoebe"
+    "speaker_name": "Phoebe",
+    "display_id": "S0002"
   },
   {
     "task_id": "EXAMPLE-003",
     "media_id": "example-text",
-    "source_id": "meld_dia11_utt9",
-    "title": "真实样本 · 仅文本",
     "modality": "text",
     "src": "/transcripts/example.json",
     "duration": 6.715,
@@ -95,13 +87,12 @@
     "demo": false,
     "timeline_origin": 0,
     "speaker_ref_src": "/media/example/speaker.jpg",
-    "speaker_name": "Phoebe"
+    "speaker_name": "Phoebe",
+    "display_id": "S0002"
   },
   {
     "task_id": "EXAMPLE-004",
     "media_id": "example-audiovisual",
-    "source_id": "meld_dia11_utt9",
-    "title": "真实样本 · 完整视频",
     "modality": "audiovisual",
     "src": "/media/example/audiovisual.mp4",
     "duration": 6.715,
@@ -109,6 +100,7 @@
     "demo": false,
     "timeline_origin": 0,
     "speaker_ref_src": "/media/example/speaker.jpg",
-    "speaker_name": "Phoebe"
+    "speaker_name": "Phoebe",
+    "display_id": "S0002"
   }
 ]

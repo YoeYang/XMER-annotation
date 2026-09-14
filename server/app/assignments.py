@@ -4,10 +4,49 @@ CLI（`manage.py apply-plan`）与管理端 API 共用这里，避免两处各�
 "样本展开成四个模态任务"而慢慢跑偏。
 """
 
+import random
+
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .models import Assignment, Task
+
+
+def assign_display_ids(session: Session, seed: int) -> list[tuple[str, str]]:
+    """给还没有编号的样本发放 display_id，返回 [(display_id, source_id)] 全量映射。
+
+    编号顺序是**打乱**的：若按 source_id 字母序发号，S0001–S0917 就全是
+    chsims、往后整段是 iemocap，标注者从编号区间就能猜出数据来源和样本聚集。
+    已有编号的样本绝不改动——编号一旦发给标注者就不能变，否则先前提交的
+    结果对不上样本；增量导入的新样本从当前最大号往后接。
+    """
+    existing: dict[str, str] = {}
+    pending: set[str] = set()
+    for source_id, display_id in session.execute(
+        select(Task.source_id, Task.display_id).distinct()
+    ):
+        if display_id:
+            existing[source_id] = display_id
+        else:
+            pending.add(source_id)
+    pending -= existing.keys()
+
+    next_number = 1 + max(
+        (int(value[1:]) for value in existing.values() if value[1:].isdigit()),
+        default=0,
+    )
+    fresh = sorted(pending)
+    random.Random(seed).shuffle(fresh)
+    for offset, source_id in enumerate(fresh):
+        existing[source_id] = f"S{next_number + offset:04d}"
+
+    for source_id in fresh:
+        session.execute(
+            Task.__table__.update()
+            .where(Task.source_id == source_id)
+            .values(display_id=existing[source_id])
+        )
+    return sorted((display_id, sid) for sid, display_id in existing.items())
 
 
 def tasks_by_sample(session: Session) -> dict[str, list[str]]:

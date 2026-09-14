@@ -35,8 +35,7 @@ const MODALITY_ORDER: Record<Modality, number> = {
   audiovisual: 3,
 };
 interface Group {
-  source_id: string;
-  label: string;
+  display_id: string;
   demo: boolean;
   tasks: Task[];
 }
@@ -44,24 +43,18 @@ function groupTasks(tasks: Task[]): Group[] {
   const order: string[] = [];
   const map = new Map<string, Task[]>();
   for (const t of tasks) {
-    if (!map.has(t.source_id)) {
-      map.set(t.source_id, []);
-      order.push(t.source_id);
+    if (!map.has(t.display_id)) {
+      map.set(t.display_id, []);
+      order.push(t.display_id);
     }
-    map.get(t.source_id)!.push(t);
+    map.get(t.display_id)!.push(t);
   }
-  return order.map((sid) => {
+  return order.map((id) => {
     const list = map
-      .get(sid)!
+      .get(id)!
       .slice()
       .sort((a, b) => MODALITY_ORDER[a.modality] - MODALITY_ORDER[b.modality]);
-    const demo = list.every((t) => t.demo);
-    return {
-      source_id: sid,
-      label: demo ? "演示样本" : sid,
-      demo,
-      tasks: list,
-    };
+    return { display_id: id, demo: list.every((t) => t.demo), tasks: list };
   });
 }
 export default function TaskSidebar({
@@ -77,21 +70,28 @@ export default function TaskSidebar({
   const complete = new Set(submissions.map((s) => s.task_id));
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // 展开当前选中任务所在的样本组
-  const selectedSource = tasks.find((t) => t.task_id === selected)?.source_id;
+  const selectedSample = tasks.find((t) => t.task_id === selected)?.display_id;
   useEffect(() => {
-    if (selectedSource)
-      setExpanded((prev) => new Set(prev).add(selectedSource));
-  }, [selectedSource]);
+    if (selectedSample)
+      setExpanded((prev) => new Set(prev).add(selectedSample));
+  }, [selectedSample]);
 
   const matchQuery = (t: Task) =>
-    (t.title + t.task_id + MODALITY_LABELS[t.modality] + t.source_id)
+    (t.display_id + MODALITY_LABELS[t.modality])
       .toLowerCase()
       .includes(query.toLowerCase());
   const matchFilter = (t: Task) =>
     filter === "all" ||
     (filter === "done" ? complete.has(t.task_id) : !complete.has(t.task_id));
 
-  const groups = groupTasks(tasks)
+  const allGroups = groupTasks(tasks);
+  // 进度按样本算：四个模态只标完两个，这个样本就还没完成。
+  // 按任务算会显示 60/80，让人以为快标完了，其实只有 15 个样本是齐的。
+  const doneSamples = allGroups.filter((g) =>
+    g.tasks.every((t) => complete.has(t.task_id)),
+  ).length;
+
+  const groups = allGroups
     .map((g) => ({
       ...g,
       tasks: g.tasks.filter((t) => matchQuery(t) && matchFilter(t)),
@@ -121,25 +121,26 @@ export default function TaskSidebar({
       <div className="sidebar-heading">
         <Layers3 size={18} />
         <h2>样本目录</h2>
-        <span>{tasks.length}</span>
+        <span>{allGroups.length}</span>
       </div>
       <div className="overall-progress">
         <div>
           <span>标注进度</span>
           <strong>
-            {complete.size}
-            <small> / {tasks.length}</small>
+            {doneSamples}
+            <small> / {allGroups.length} 个样本</small>
           </strong>
         </div>
+        {/* 数字按样本，进度条按任务——这样标完一个模态也能看到条在动 */}
         <progress
           aria-label="总体标注进度"
           max={tasks.length}
           value={complete.size}
         />
         <p>
-          {complete.size === tasks.length
+          {doneSamples === allGroups.length
             ? "本组样本已全部提交"
-            : "每一份感知，都值得被记录。"}
+            : "四个模态都提交，这个样本才算完成。"}
         </p>
       </div>
       <label className="search-box">
@@ -169,14 +170,14 @@ export default function TaskSidebar({
       </div>
       <nav className="sample-list" aria-label="样本目录">
         {groups.map((group) => {
-          const isOpen = expanded.has(group.source_id);
+          const isOpen = expanded.has(group.display_id);
           const doneCount = group.tasks.filter((t) =>
             complete.has(t.task_id),
           ).length;
           const allDone = doneCount === group.tasks.length;
           return (
             <div
-              key={group.source_id}
+              key={group.display_id}
               className={"sample-group " + (isOpen ? "open" : "")}
             >
               <button
@@ -185,9 +186,9 @@ export default function TaskSidebar({
                 onClick={() =>
                   setExpanded((prev) => {
                     const next = new Set(prev);
-                    next.has(group.source_id)
-                      ? next.delete(group.source_id)
-                      : next.add(group.source_id);
+                    next.has(group.display_id)
+                      ? next.delete(group.display_id)
+                      : next.add(group.display_id);
                     return next;
                   })
                 }
@@ -198,8 +199,7 @@ export default function TaskSidebar({
                   <ChevronRight size={15} />
                 )}
                 <span className="sample-name">
-                  {group.demo ? "演示样本" : "真实样本"}
-                  <small>{group.source_id}</small>
+                  {group.demo ? "演示样本" : group.display_id}
                 </span>
                 {allDone ? (
                   <Check size={15} className="teal-text" />

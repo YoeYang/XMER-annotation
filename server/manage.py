@@ -2,6 +2,7 @@
 """标注平台管理工具。
 
   create-annotators  批量生成标注账号，导出专属链接（明文 token 只出现这一次）
+  assign-display-ids 给样本发放对标注者可见的编号（S0001…），导出映射 CSV
   plan               生成分配计划 CSV，可在表格软件里手改后再回填
   apply-plan         把（可能已手改的）计划 CSV 写入数据库
   status             查看账号与分配现状
@@ -18,7 +19,7 @@ from pathlib import Path
 from sqlalchemy import delete, func, select
 
 from app.allocation import build_plan
-from app.assignments import replace_assignments, tasks_by_sample
+from app.assignments import assign_display_ids, replace_assignments, tasks_by_sample
 from app.auth import hash_token, new_token
 from app.config import PHASES, load_settings
 from app.db import create_all, create_db_engine, create_session_factory
@@ -270,6 +271,26 @@ def cmd_drop_annotator(args):
     print(f"已删除 {args.annotator_id} 及其全部数据")
 
 
+def cmd_assign_display_ids(args):
+    """给样本发放对标注者可见的不透明编号，并导出映射表。
+
+    映射表是**唯一**能把 S0001 还原回 meld_dia762_utt2 的东西，
+    分析阶段离不开它，务必随实验数据一起留存。
+    """
+    factory = session_factory()
+    with factory() as session:
+        mapping = assign_display_ids(session, seed=args.seed)
+        session.commit()
+
+    path = Path(args.out)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["display_id", "source_id", "dataset"])
+        for display_id, source_id in mapping:
+            writer.writerow([display_id, source_id, source_id.split("_")[0]])
+    print(f"共 {len(mapping)} 个样本，映射表写入 {path}")
+
+
 def cmd_status(args):
     factory = session_factory()
     with factory() as session:
@@ -338,6 +359,11 @@ def main():
     drop = sub.add_parser("drop-annotator", help="删除标注者及其全部数据")
     drop.add_argument("--annotator-id", required=True)
     drop.set_defaults(func=cmd_drop_annotator)
+
+    display = sub.add_parser("assign-display-ids", help="发放样本编号并导出映射表")
+    display.add_argument("--seed", type=int, default=20260914)
+    display.add_argument("--out", default="display_ids.csv")
+    display.set_defaults(func=cmd_assign_display_ids)
 
     status = sub.add_parser("status", help="查看账号与分配现状")
     status.set_defaults(func=cmd_status)

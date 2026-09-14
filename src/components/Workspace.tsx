@@ -4,10 +4,16 @@ import { AnnotationSession } from "../core/session";
 import type { AnnotationRepository } from "../storage/repository";
 import type { SyncState } from "../storage/syncingRepository";
 import type { Attempt, Submission, Task } from "../types";
-import { formatDate, MODALITY_LABELS, SAMPLE_RATE_HZ } from "../config";
+import {
+  formatDate,
+  formatTime,
+  MODALITY_LABELS,
+  SAMPLE_RATE_HZ,
+} from "../config";
 import AnnotationPad from "./AnnotationPad";
 import MediaPanel from "./MediaPanel";
 import AttemptPanel from "./AttemptPanel";
+import ResultActions from "./ResultActions";
 interface Props {
   task: Task;
   sync: SyncState | null;
@@ -68,6 +74,25 @@ export default function Workspace(props: Props) {
       setBusy(false);
     }
   };
+  const submit = () =>
+    void action(async () => {
+      if (!current) return;
+      await session.flush();
+      const result = await repository.submit(current.attempt_id);
+      await props.refresh();
+      setNotice(
+        result.revision === 1
+          ? "Submit 成功，结果已保存到本地。"
+          : "Update 成功，历史原始记录已保留。",
+      );
+    });
+  const reset = () =>
+    void action(async () => {
+      await session.reset();
+      setSelected("");
+      setPreparingNew(true);
+      await props.refresh();
+    });
   return (
     <main className="workspace">
       <div className="breadcrumb">
@@ -77,13 +102,13 @@ export default function Workspace(props: Props) {
       <div className="workspace-heading">
         <div>
           <div className="eyebrow">CONTINUOUS EMOTION ANNOTATION</div>
-          <h1>{task.title}</h1>
+          <h1>
+            {task.display_id} · {MODALITY_LABELS[task.modality]}
+          </h1>
           <p>
-            <span>{task.task_id}</span>
+            {task.demo ? "演示任务 · 非实验素材" : "研究样本"}
             <i />
-            {MODALITY_LABELS[task.modality]}
-            <i />
-            {task.demo ? "演示任务 · 非实验素材" : task.source_id}
+            {formatTime(task.duration)}
           </p>
         </div>
         <div className="sample-counter">
@@ -116,6 +141,17 @@ export default function Workspace(props: Props) {
             setNotice("");
             void session.start("annotation", point);
           }}
+          actions={
+            <ResultActions
+              current={current}
+              submissions={submissions}
+              view={view}
+              busy={busy}
+              onSubmit={submit}
+              onReset={reset}
+              onExport={() => void action(props.onExport)}
+            />
+          }
         />
       </div>
       <div
@@ -162,28 +198,6 @@ export default function Workspace(props: Props) {
           setSelected(value);
         }}
         busy={busy}
-        onSubmit={() =>
-          void action(async () => {
-            if (!current) return;
-            await session.flush();
-            const result = await repository.submit(current.attempt_id);
-            await props.refresh();
-            setNotice(
-              result.revision === 1
-                ? "Submit 成功，结果已保存到本地。"
-                : "Update 成功，历史原始记录已保留。",
-            );
-          })
-        }
-        onReset={() =>
-          void action(async () => {
-            await session.reset();
-            setSelected("");
-            setPreparingNew(true);
-            await props.refresh();
-          })
-        }
-        onExport={() => void action(props.onExport)}
       />
       {notice && (
         <p className="operation-notice" role="status">

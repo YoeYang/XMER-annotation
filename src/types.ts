@@ -2,8 +2,9 @@ export type Modality = "visual" | "audio" | "text" | "audiovisual";
 export interface Task {
   task_id: string;
   media_id: string;
-  source_id: string;
-  title: string;
+  // 样本的不透明编号（S0001…）。同一样本的四个任务共用一个，
+  // 目录与标题都只显示它：原始编号带着数据集名字，会透露样本来源。
+  display_id: string;
   modality: Modality;
   src: string;
   duration: number;

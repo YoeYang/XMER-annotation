@@ -7,14 +7,19 @@ from .timeutils import UtcDateTime
 
 
 class TaskOut(BaseModel):
-    """下发给标注者的任务。刻意不含 is_anchor——标注者不应分辨出哪些是锚点。"""
+    """下发给标注者的任务。
+
+    刻意不含三样东西：
+    is_anchor —— 标注者不应分辨出哪些是锚点；
+    source_id 与 title —— 两者都含数据集名和原始编号，会透露样本来源。
+    目录里显示的是 display_id。
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     task_id: str
     media_id: str
-    source_id: str
-    title: str
+    display_id: str | None
     modality: str
     src: str
     duration: float

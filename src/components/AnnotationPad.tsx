@@ -1,12 +1,20 @@
-import { Crosshair, MousePointer2 } from "lucide-react";
+import type { ReactNode } from "react";
+import { MousePointer2 } from "lucide-react";
 import type { Point, SessionView } from "../types";
 import { normalizePoint } from "../core/sampler";
 interface Props {
   view: SessionView;
   onStart: (point: Point) => void;
   onMove: (point: Point) => void;
+  /** 保存 / 重新标注 / 导出。放在标题栏右侧，一次标注不必滚动到页面底部。 */
+  actions: ReactNode;
 }
-export default function AnnotationPad({ view, onStart, onMove }: Props) {
+export default function AnnotationPad({
+  view,
+  onStart,
+  onMove,
+  actions,
+}: Props) {
   const completedAnnotation =
     view.phase === "completed" && view.attempt?.mode === "annotation";
   const suspendedAnnotation =
@@ -28,7 +36,7 @@ export default function AnnotationPad({ view, onStart, onMove }: Props) {
           <span className="eyebrow">02 / ANNOTATE</span>
           <h2 id="annotation-title">感知此刻的情绪</h2>
         </div>
-        <Crosshair size={19} className="muted" />
+        {actions}
       </div>
       <p className="panel-description">
         根据目标人物当前的情感状态，连续移动光标。

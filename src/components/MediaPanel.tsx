@@ -16,7 +16,11 @@ import {
   resolveAssetPath,
 } from "../config";
 import type { SessionView, Task, Transcript } from "../types";
-import { silentWav, textAt, validateTranscript } from "../core/textTimeline";
+import {
+  silentWav,
+  transcriptTokens,
+  validateTranscript,
+} from "../core/textTimeline";
 import type { AnnotationSession } from "../core/session";
 interface Props {
   task: Task;
@@ -137,10 +141,16 @@ export default function MediaPanel({ task, session, view, onReload }: Props) {
           <div className="text-scene">
             <span className="eyebrow">TIMED TRANSCRIPT</span>
             <p data-testid="transcript">
-              {(transcript && textAt(transcript, view.time)) ||
-                (view.phase === "ready" ? "文字将随播放逐步出现" : "…")}
+              {transcript
+                ? transcriptTokens(transcript, view.time).map((token, i) => (
+                    <span key={i} className={token.spoken ? "said" : ""}>
+                      {token.lead}
+                      {token.text}
+                    </span>
+                  ))
+                : "文本载入中…"}
             </p>
-            <small>按原始说话时间戳呈现</small>
+            <small>高亮表示已经说到这里 · 按原始说话时间戳推进</small>
           </div>
         )}
         <span className="stage-label">

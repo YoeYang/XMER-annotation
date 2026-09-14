@@ -55,6 +55,10 @@ class Task(Base):
     task_id: Mapped[str] = mapped_column(Text, primary_key=True)
     media_id: Mapped[str] = mapped_column(Text, nullable=False)
     source_id: Mapped[str] = mapped_column(Text, nullable=False)
+    # 给标注者看的不透明编号（S0001…），同一样本的四个任务共用一个。
+    # 目录里出现 meld / iemocap 这类名字会透露数据来源，也会让人对样本先入为主。
+    # 由 manage.py assign-display-ids 填充，映射表只留在后台 CSV 里。
+    display_id: Mapped[str | None] = mapped_column(Text, index=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     modality: Mapped[str] = mapped_column(Text, nullable=False)
     src: Mapped[str] = mapped_column(Text, nullable=False)

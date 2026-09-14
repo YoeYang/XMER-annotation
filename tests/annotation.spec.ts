@@ -72,6 +72,25 @@ test("侧栏按样本分组，完整视频排在三个单模态之后", async ({
   expect(labels).toEqual(["仅视觉", "仅音频", "仅文本", "完整视频"]);
 });
 
+test("目录只显示不透明编号，不泄露样本来自哪个数据集", async ({ page }) => {
+  await open(page);
+  await expect(page.locator(".sample-group .sample-name").first()).toHaveText(
+    /^(S\d{4}|演示样本)$/,
+  );
+  await expect(page.locator(".sidebar")).not.toContainText(
+    /meld|iemocap|chsims|mosi|mustard/i,
+  );
+});
+
+test("进度按样本计数，四个模态都提交才算一个样本完成", async ({ page }) => {
+  // 按任务算会显示 60/80，让人以为快标完了，其实只有 15 个样本是齐的
+  await open(page);
+  const samples = await page.locator(".sample-group").count();
+  await expect(page.locator(".overall-progress strong")).toHaveText(
+    new RegExp(`^0\\s*/\\s*${samples} 个样本$`),
+  );
+});
+
 test("说话人静帧常驻在媒体区上方", async ({ page }) => {
   await open(page);
   await openTask(page, "仅视觉");
@@ -119,15 +138,25 @@ test("暂停后停止采样，继续播放后恢复", async ({ page }) => {
 
 // --------------------------------------------------------------- 文本模态
 
-test("文本随播放逐词出现，暂停时停在当前文字", async ({ page }) => {
+test("整段文字常驻，高亮随播放推进且暂停即停", async ({ page }) => {
   await open(page);
   await openTask(page, "仅文本");
+  const transcript = page.getByTestId("transcript");
+  // 还没开始播就该看到全文：逐词浮现动得太快不好标，句末静默还会整屏空掉
+  const full = (await transcript.textContent())!;
+  expect(full.length).toBeGreaterThan(4);
+
   await startAnnotating(page);
   await page.waitForTimeout(1500);
-  const shown = await page.getByTestId("transcript").textContent();
+  await expect(transcript).toHaveText(full);
+  const said = transcript.locator(".said");
+  expect(await said.count()).toBeGreaterThan(0);
+
   await page.getByRole("button", { name: "暂停播放" }).click();
-  await page.waitForTimeout(1000);
-  await expect(page.getByTestId("transcript")).toHaveText(shown!);
+  const frozen = await said.count();
+  await page.waitForTimeout(1200);
+  expect(await said.count()).toBe(frozen);
+  await expect(transcript).toHaveText(full);
 });
 
 // --------------------------------------------------------------- 保存与同步
@@ -161,5 +190,9 @@ test("刷新之后草稿还在，不用从头重标", async ({ page }) => {
   await page.reload();
   await expect(page.locator(".sample-list")).toBeVisible();
   await openTask(page, "仅视觉");
-  await expect(page.locator(".attempt-panel")).toContainText(/进行中|已完成|待提交/);
+  // 刷新时正在录制，这一轮状态是「已中断」——要的是采样点没白标
+  await expect(page.locator(".attempt-panel")).toContainText(
+    /进行中|已完成|已中断|待提交/,
+  );
+  await expect(page.getByTestId("sample-count")).not.toHaveText("0");
 });

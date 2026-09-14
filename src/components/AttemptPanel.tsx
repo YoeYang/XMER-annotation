@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, History, RotateCcw, Send } from "lucide-react";
+import { History } from "lucide-react";
 import { formatDate } from "../config";
 import type { Attempt, SessionView, Submission } from "../types";
 interface Props {
@@ -8,9 +8,6 @@ interface Props {
   view: SessionView;
   selected: string;
   onSelect: (id: string) => void;
-  onSubmit: () => void;
-  onReset: () => void;
-  onExport: () => void;
   busy: boolean;
 }
 export default function AttemptPanel({
@@ -20,13 +17,9 @@ export default function AttemptPanel({
   view,
   selected,
   onSelect,
-  onSubmit,
-  onReset,
-  onExport,
   busy,
 }: Props) {
-  const latest = submissions.at(-1),
-    already = submissions.some((s) => s.attempt_id === current?.attempt_id);
+  const latest = submissions.at(-1);
   const active = [
     "recording",
     "preview",
@@ -40,33 +33,22 @@ export default function AttemptPanel({
     completed: "已完成",
     interrupted: "已中断",
   };
+  // 收起来的折叠块：采样点数和提交状态留在标题行，轮次、时间这些按需展开。
   return (
-    <section className="panel attempt-panel" aria-label="标注结果">
-      <div className="attempt-summary">
-        <div className="result-icon">
-          <CheckCircle2 size={21} />
-        </div>
-        <div>
-          <h2>
-            {current?.status === "completed"
-              ? "本轮记录已完成"
-              : "记录你的每一刻感知"}
-          </h2>
-          <p>
-            {current?.status === "completed"
-              ? "检查轮次后提交；如需调整，可以重新标注。"
-              : "点击二维区域开始，播放结束后自动保存本轮结果。"}
-          </p>
-        </div>
-      </div>
+    <details className="panel attempt-panel" aria-label="标注结果">
+      <summary>
+        <span className="attempt-state">
+          {current ? status[current.status] : "未开始"}
+        </span>
+        <span>
+          本轮 <strong data-testid="sample-count">{current?.sample_count ?? 0}</strong> 个采样点
+        </span>
+        <span className="attempt-revision">
+          {latest ? "已提交 V" + latest.revision : "尚未提交"}
+        </span>
+        <small>展开查看轮次与时间</small>
+      </summary>
       <div className="result-metrics">
-        <div>
-          <span>原始采样点</span>
-          <strong data-testid="sample-count">
-            {current?.sample_count ?? 0}
-            <small> 点</small>
-          </strong>
-        </div>
         <div>
           <span>本轮完成时间</span>
           <strong className="date-value">
@@ -100,47 +82,6 @@ export default function AttemptPanel({
               ))}
           </select>
         </label>
-        <div className="action-buttons">
-          <button
-            className="button secondary"
-            onClick={onExport}
-            disabled={
-              busy ||
-              ["starting", "recording", "preview", "buffering"].includes(
-                view.phase,
-              )
-            }
-          >
-            <Download size={15} />
-            导出 JSON
-          </button>
-          <button
-            className="button secondary"
-            onClick={onReset}
-            disabled={
-              busy ||
-              ["loading", "starting", "error"].includes(view.phase) ||
-              (!view.attempt && !current)
-            }
-          >
-            <RotateCcw size={15} />
-            重新标注
-          </button>
-          <button
-            className="button primary"
-            onClick={onSubmit}
-            disabled={
-              busy ||
-              active ||
-              current?.status !== "completed" ||
-              !current.sample_count ||
-              already
-            }
-          >
-            <Send size={15} />
-            {already ? "已提交" : latest ? "Update 更新" : "Submit 提交"}
-          </button>
-        </div>
       </div>
       {latest && (
         <p className="submission-time">
@@ -148,6 +89,6 @@ export default function AttemptPanel({
           {latest.updated_at && "　最近更新：" + formatDate(latest.updated_at)}
         </p>
       )}
-    </section>
+    </details>
   );
 }

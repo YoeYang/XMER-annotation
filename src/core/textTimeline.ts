@@ -7,7 +7,7 @@ export function validateTasks(input: unknown): Task[] {
     if (
       !task ||
       !["visual", "audio", "text", "audiovisual"].includes(task.modality) ||
-      !["task_id", "media_id", "source_id", "title", "src", "target"].every(
+      !["task_id", "media_id", "display_id", "src", "target"].every(
         (k) => typeof task[k] === "string" && task[k].trim(),
       ) ||
       typeof task.demo !== "boolean" ||
@@ -58,14 +58,38 @@ export function validateTranscript(
   }
   return doc;
 }
-export function textAt(doc: Transcript, time: number): string {
-  const sentence = doc.sentences.find((s) => time >= s.start && time < s.end);
-  return sentence
-    ? sentence.tokens
-        .filter((t) => t.start <= time)
-        .map((t) => t.text)
-        .join("")
-    : "";
+export interface TimedToken {
+  text: string;
+  /** 与上一个词之间的分隔符：中文两侧不加空格，英文加。 */
+  lead: string;
+  /** 播放是否已经说到这个词。整段常驻，只有这个标记随时间推进。 */
+  spoken: boolean;
+}
+const CJK =
+  /[\u2e80-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\ufe30-\ufe4f\uff00-\uffef]/;
+// 英文若不补空格会拼成一个超长单词，浏览器找不到断点，长句直接冲出画面。
+function needsSpace(before: string, after: string): boolean {
+  const a = before.slice(-1),
+    b = after.slice(0, 1);
+  return !!a && !!b && !CJK.test(a) && !CJK.test(b);
+}
+/**
+ * 整段转录稿一次给全，已说到的词标 spoken。
+ * 逐词浮现动得太快不好标，且句子讲完后画面会空掉——尤其片尾有长静默时。
+ */
+export function transcriptTokens(doc: Transcript, time: number): TimedToken[] {
+  const out: TimedToken[] = [];
+  let previous = "";
+  for (const sentence of doc.sentences)
+    for (const token of sentence.tokens) {
+      out.push({
+        text: token.text,
+        lead: needsSpace(previous, token.text) ? " " : "",
+        spoken: token.start <= time,
+      });
+      previous = token.text;
+    }
+  return out;
 }
 // A real silent PCM media resource: the HTML audio element, not a wall clock, drives text time.
 export function silentWav(duration: number): Blob {
