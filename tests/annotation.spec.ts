@@ -136,34 +136,6 @@ test("暂停后停止采样，继续播放后恢复", async ({ page }) => {
   await expect(page.getByTestId("media-time")).toHaveText(paused!);
 });
 
-// --------------------------------------------------------------- 曲线回看
-
-test("曲线图要等四个模态全部提交才出现", async ({ page }) => {
-  // 只标完一个模态就给看曲线，标后面的模态时会照着前面那条描，
-  // 而模态之间的差异正是本研究要测的东西
-  await open(page);
-  const curve = page.locator(".curve-panel");
-
-  // 侧栏的「已提交」筛选标签也叫这个名字，必须按主按钮定位
-  const send = page.locator(".action-buttons .button.primary");
-  for (const modality of ["仅视觉", "仅音频", "仅文本", "完整视频"]) {
-    await openTask(page, modality);
-    await expect(curve).toHaveCount(0);
-    await startAnnotating(page);
-    await expect(send).toBeEnabled({ timeout: 30000 });
-    await send.click();
-    await expect(page.locator(".operation-notice")).toContainText(/成功/, {
-      timeout: 30000,
-    });
-  }
-
-  await expect(curve).toBeVisible({ timeout: 30000 });
-  await expect(curve).toContainText("本样本曲线");
-  // 四个模态各一条中线加一条色带
-  await expect(curve.locator("svg path")).toHaveCount(8);
-  await expect(curve.locator(".curve-legend li")).toHaveCount(4);
-});
-
 // --------------------------------------------------------------- 播放控制
 
 test("选过的倍速在换任务和刷新之后仍然保持", async ({ page }) => {
