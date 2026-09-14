@@ -33,7 +33,6 @@ export class AnnotationSession {
       rate: rememberedRate(),
       point: null,
       attempt: null,
-      curve: [],
       save: "idle",
       savedAt: null,
       error: null,
@@ -249,10 +248,7 @@ export class AnnotationSession {
       (attempt.sample_count > 0 && time <= attempt.last_media_time)
     )
       return;
-    const sample = makeSample(attempt, time, point);
-    this.pending.push(sample);
-    // pending 会在落盘后清空，曲线要另存一份才画得出来
-    this.view.curve.push(sample);
+    this.pending.push(makeSample(attempt, time, point));
     attempt.sample_count++;
     attempt.last_media_time = time;
     this.version++;
@@ -319,7 +315,6 @@ export class AnnotationSession {
         calibration: null,
       };
       this.pending = [];
-      this.view.curve = [];
       this.version++;
       this.sampler.reset();
       this.view.time = media.currentTime;

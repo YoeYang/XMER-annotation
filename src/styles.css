@@ -1061,6 +1061,26 @@ progress::-moz-progress-bar {
   font-size: 11px;
   fill: #b0bba8;
 }
+.curve-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  list-style: none;
+  margin: 6px 0 4px;
+  padding: 0;
+  font-size: 10px;
+  color: #8b9784;
+}
+.curve-legend li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.curve-legend i {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+}
 .save-line {
   display: flex;
   align-items: center;

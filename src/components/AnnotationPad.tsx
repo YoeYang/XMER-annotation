@@ -2,19 +2,21 @@ import type { ReactNode } from "react";
 import { MousePointer2 } from "lucide-react";
 import type { Point, SessionView } from "../types";
 import { normalizePoint } from "../core/sampler";
-import CurvePanel from "./CurvePanel";
 interface Props {
   view: SessionView;
   onStart: (point: Point) => void;
   onMove: (point: Point) => void;
   /** 保存 / 重新标注 / 导出。放在标题栏右侧，一次标注不必滚动到页面底部。 */
   actions: ReactNode;
+  /** 本样本四模态曲线，填在罗盘下方原本空着的位置；未集齐时为 null。 */
+  curves: ReactNode;
 }
 export default function AnnotationPad({
   view,
   onStart,
   onMove,
   actions,
+  curves,
 }: Props) {
   const completedAnnotation =
     view.phase === "completed" && view.attempt?.mode === "annotation";
@@ -153,13 +155,7 @@ export default function AnnotationPad({
         <MousePointer2 size={14} />
         无需按住鼠标；离开区域后保持最后位置。
       </p>
-      {completedAnnotation && view.attempt && (
-        <CurvePanel
-          curve={view.curve}
-          modality={view.attempt.modality}
-          duration={view.duration}
-        />
-      )}
+      {curves}
     </section>
   );
 }

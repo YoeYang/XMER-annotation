@@ -64,6 +64,9 @@ export class HttpRepository implements AnnotationRepository {
   async listAttempts(_annotator: string) {
     return this.request<Attempt[]>("/attempts");
   }
+  async attemptSamples(attemptId: string) {
+    return this.request<Sample[]>("/attempts/" + attemptId + "/samples");
+  }
   async listSubmissions(_annotator: string) {
     return this.request<Submission[]>("/submissions");
   }

@@ -424,3 +424,36 @@ def test_queue_puts_full_video_after_the_single_modalities(
 
     order = [t["modality"] for t in client.get("/api/me", headers=auth).json()["tasks"]]
     assert order == ["visual", "audio", "text", "audiovisual"]
+
+
+# --------------------------------------------------------------- 读回采样点
+
+
+def test_can_read_back_own_samples_in_order(
+    client: TestClient, session: Session, assigned
+):
+    """罗盘下方要画四个模态的曲线，得能按轮次把采样点读回来。"""
+    client.put("/api/attempts/att-1", json=attempt_body(), headers=assigned)
+    # 故意乱序写入：读回来必须按 sample_index 排好
+    client.put(
+        "/api/attempts/att-1/chunks/1", json={"samples": samples(10, 11)}, headers=assigned
+    )
+    client.put(
+        "/api/attempts/att-1/chunks/0", json={"samples": samples(0, 1)}, headers=assigned
+    )
+
+    response = client.get("/api/attempts/att-1/samples", headers=assigned)
+    assert response.status_code == 200
+    assert [s["sample_index"] for s in response.json()] == [0, 1, 10, 11]
+    assert response.json()[0]["valence"] == 0.1
+
+
+def test_cannot_read_another_annotators_samples(
+    client: TestClient, session: Session, assigned, other_auth
+):
+    client.put("/api/attempts/att-1", json=attempt_body(), headers=assigned)
+    client.put(
+        "/api/attempts/att-1/chunks/0", json={"samples": samples(0)}, headers=assigned
+    )
+    assert client.get("/api/attempts/att-1/samples", headers=other_auth).status_code == 404
+    assert client.get("/api/attempts/nope/samples", headers=assigned).status_code == 404

@@ -86,6 +86,17 @@ export class IndexedDbRepository implements AnnotationRepository {
       .filter((a) => a.annotator_id === annotator)
       .sort((a, b) => a.started_at.localeCompare(b.started_at));
   }
+  async attemptSamples(attemptId: string): Promise<Sample[]> {
+    const db = await this.database;
+    const rows: Sample[] = await request(
+      db
+        .transaction("samples")
+        .objectStore("samples")
+        .index("attempt")
+        .getAll(attemptId),
+    );
+    return rows.sort((a, b) => a.sample_index - b.sample_index);
+  }
   async listSubmissions(annotator: string) {
     return (await this.readAll<Submission>("submissions"))
       .filter((s) => s.annotator_id === annotator)

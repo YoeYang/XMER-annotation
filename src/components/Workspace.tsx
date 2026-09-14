@@ -14,8 +14,11 @@ import AnnotationPad from "./AnnotationPad";
 import MediaPanel from "./MediaPanel";
 import AttemptPanel from "./AttemptPanel";
 import ResultActions from "./ResultActions";
+import CurvePanel, { type CurveSeries } from "./CurvePanel";
 interface Props {
   task: Task;
+  /** 同一样本的全部模态任务，用来判断曲线该不该出现。 */
+  sampleTasks: Task[];
   sync: SyncState | null;
   index: number;
   total: number;
@@ -74,6 +77,48 @@ export default function Workspace(props: Props) {
       setBusy(false);
     }
   };
+  // 四个模态都提交之后，才把这个样本的四条曲线取回来画在罗盘下方。
+  // 中途就给看，标后面的模态时会照着前面的曲线描。
+  const [curves, setCurves] = useState<CurveSeries[]>([]);
+  const latestSubmission = (taskId: string) =>
+    props.submissions
+      .filter((s) => s.task_id === taskId)
+      .reduce<Submission | null>(
+        (best, s) => (!best || s.revision > best.revision ? s : best),
+        null,
+      );
+  // 轮次编号变了就要重取：重标并再次提交后，曲线得跟着换成新的那一轮
+  const attemptIds = props.sampleTasks
+    .map((t) => latestSubmission(t.task_id)?.attempt_id ?? "")
+    .join(",");
+  const complete =
+    props.sampleTasks.length > 0 && !attemptIds.split(",").includes("");
+  useEffect(() => {
+    if (!complete) {
+      setCurves([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const loaded: CurveSeries[] = [];
+      for (const item of props.sampleTasks) {
+        const submission = latestSubmission(item.task_id);
+        if (!submission) continue;
+        loaded.push({
+          modality: item.modality,
+          samples: await repository.attemptSamples(submission.attempt_id),
+        });
+      }
+      if (!cancelled) setCurves(loaded);
+    })().catch(() => {
+      // 取不回来就不画，标注本身不受影响
+      if (!cancelled) setCurves([]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [attemptIds, complete]);
+
   const submit = () =>
     void action(async () => {
       if (!current) return;
@@ -141,6 +186,7 @@ export default function Workspace(props: Props) {
             setNotice("");
             void session.start("annotation", point);
           }}
+          curves={curves.length ? <CurvePanel series={curves} /> : null}
           actions={
             <ResultActions
               current={current}

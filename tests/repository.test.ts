@@ -41,6 +41,25 @@ describe("本地持久化与提交版本", () => {
     ).rejects.toThrow();
     expect((await db.export("A001")).attempts[0].samples[0].valence).toBe(0.2);
   });
+  it("按轮次读回采样点，排好序且不串到别的轮次", async () => {
+    // 四模态曲线回看要按 attempt_id 取采样点，取错轮次就画成别人的曲线
+    const db = repo(),
+      a = fixture(),
+      b = fixture();
+    const make = (attempt: Attempt, i: number) =>
+      makeSample({ ...attempt, sample_count: i }, i * 0.1, {
+        valence: i / 10,
+        arousal: 0,
+      });
+    // sample_count 必须覆盖到最大的 sample_index，否则 checkpoint 会判定越界
+    await db.checkpoint({ ...a, sample_count: 3 }, [make(a, 2), make(a, 0)]);
+    await db.checkpoint({ ...b, sample_count: 1 }, [make(b, 0)]);
+
+    const read = await db.attemptSamples(a.attempt_id);
+    expect(read.map((s) => s.sample_index)).toEqual([0, 2]);
+    expect(read.every((s) => s.attempt_id === a.attempt_id)).toBe(true);
+    expect(await db.attemptSamples("没有这一轮")).toEqual([]);
+  });
   it("首次 Submit、第二次 Update、重复点击及并发请求保留唯一版本", async () => {
     const db = repo(),
       first = fixture();

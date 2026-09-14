@@ -251,6 +251,9 @@ export default function App() {
           <Workspace
             key={annotator + selected + reload}
             task={selectedTask}
+            sampleTasks={tasks.filter(
+              (t) => t.display_id === selectedTask.display_id,
+            )}
             index={tasks.indexOf(selectedTask)}
             total={tasks.length}
             annotator={annotator}

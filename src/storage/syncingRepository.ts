@@ -149,6 +149,12 @@ export class SyncingRepository implements AnnotationRepository {
       () => this.local.listSubmissions(annotator),
     );
   }
+  async attemptSamples(attemptId: string) {
+    return this.preferRemote(
+      () => this.remote.attemptSamples(attemptId),
+      () => this.local.attemptSamples(attemptId),
+    );
+  }
   async export(annotator: string): Promise<ExportData> {
     return this.preferRemote(
       () => this.remote.export(annotator),

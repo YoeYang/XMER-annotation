@@ -142,6 +142,21 @@ def write_chunk(
     )
 
 
+@router.get("/attempts/{attempt_id}/samples")
+def read_samples(
+    attempt_id: str,
+    annotator: Annotator = Depends(current_annotator),
+    session: Session = Depends(get_session),
+) -> list[dict]:
+    """读回某一轮的全部采样点，按 sample_index 排好。
+
+    标注页在四个模态都提交后，要把这个样本的四条曲线画在罗盘下方；
+    换设备或刷新之后本地内存里没有采样点，只能回服务器取。
+    """
+    _own_attempt(session, annotator, attempt_id)
+    return assemble_samples(session, attempt_id)
+
+
 @router.post("/attempts/{attempt_id}/submit", response_model=SubmissionOut)
 def submit_attempt(
     attempt_id: str,
