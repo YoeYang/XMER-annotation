@@ -1078,3 +1078,132 @@ Yoe 那 80 个任务里有 9 个是 0.5×/0.75× 标的（20Hz / 13.6Hz），其
 我最初的采样测试让媒体时间正好停在 2.000 这种格点上，末点收不收要看浮点误差，
 三条断言无谓地红了。改成停在格点之间（1.95）就稳定了。
 **边界值测试要避开被测逻辑的分界点。**
+
+---
+
+# 2026-09-16 — 目录与文件清单（V3 改版前的基线）
+
+二维范式的数据已存档、代码已全部推上 GitHub
+（`https://github.com/YoeYang/XMER-annotation.git`）。
+下面是改版前的完整家底，**标注了哪些是存档、哪些是在用的代码**。
+
+## 顶层：`/scratch/project_2017416/yyy2026/XMER/`
+
+| 目录 | 体积 | 性质 | 内容 |
+| --- | --- | --- | --- |
+| `01-multi-agent-draft-frame` | 5.9M | **历史存档** | 早期多智能体草稿框架，已不用 |
+| `02-annotation-streamlit-CPM` | 3.1M | **历史存档** | 最早的 Streamlit 标注原型，被 05 取代 |
+| `03-R1-distillation-for-preliminary-exp` | 856M | **历史存档** | 前期蒸馏实验 |
+| `04-conflict-sampling` | 161M | 在用（选样） | 冲突样本筛选，产出标注池与锚点集 |
+| `05-annotation` | 45M | **在用（主项目）** | 标注平台本体，**唯一在 git 里的目录** |
+| `06-speaker-frames` | 181M | 在用（数据准备） | 说话人静帧 |
+| `07-text-alignment` | 2.8G | 在用（数据准备） | 词级强制对齐 |
+| `08-material-prep` | 8.1G | 在用（数据准备） | 四模态素材与转录稿 |
+
+> ⚠️ **只有 `05-annotation` 有版本控制。** 04/06/07/08 的脚本只存在于 Roihu 的
+> scratch 上，没有任何备份。scratch 不是长期存储。
+
+## `05-annotation/` —— 标注平台（GitHub 仓库）
+
+### 前端（网页设计）
+
+| 路径 | 作用 |
+| --- | --- |
+| `src/App.tsx` | 应用外壳：令牌鉴权、任务目录加载、导出、全局错误 |
+| `src/components/TaskSidebar.tsx` | 左侧样本目录：分组、搜索、筛选、进度（按样本计数） |
+| `src/components/Workspace.tsx` | 工作台：串起媒体面板、标注罗盘、轮次面板 |
+| `src/components/MediaPanel.tsx` | 媒体区：四模态播放、说话人静帧、文本整段高亮、倍速 |
+| `src/components/AnnotationPad.tsx` | **二维标注罗盘 —— V3 要换成两个一维 bar 的就是这个** |
+| `src/components/ResultActions.tsx` | 保存/重新标注/导出三个按钮（在罗盘标题栏） |
+| `src/components/AttemptPanel.tsx` | 轮次与提交信息，默认折叠 |
+| `src/core/sampler.ts` | **采样器**：按媒体时间定频、对齐 0.1s 栅格 |
+| `src/core/session.ts` | **一轮标注的状态机**：播放、采样、落盘、提交、中断恢复 |
+| `src/core/textTimeline.ts` | 任务与转录稿校验、整段文本分词与高亮 |
+| `src/storage/repository.ts` | 存储接口 |
+| `src/storage/indexedDbRepository.ts` | 本地库；采样点写入后**不可篡改** |
+| `src/storage/httpRepository.ts` | 云端 API 客户端 |
+| `src/storage/syncingRepository.ts` | 本地优先 + 串行重试队列，断网可继续标 |
+| `src/config.ts` | 采样率、倍速表、模态名、资源路径解析 |
+| `src/types.ts` `src/auth.ts` `src/styles.css` | 类型、令牌捕获、全部样式 |
+| `public/` | 演示素材与 `tasks.json`（仅本地开发与测试用） |
+
+### 后端与调度管理
+
+| 路径 | 作用 |
+| --- | --- |
+| `server/app/api.py` | 标注者接口：任务清单、轮次、分块写入、提交、读回采样点、导出 |
+| `server/app/admin.py` | 管理端：进度、导出、账号增改、改分配、轮次与质量标记、管理页 |
+| `server/app/models.py` | 7 张表的定义与约束（幂等、防重复提交的关键都在这里） |
+| `server/app/allocation.py` | **分配算法**：均分、锚点按覆盖度散布、交错排队 |
+| `server/app/assignments.py` | 落库分配、样本编号发放、说话人名清洗 |
+| `server/app/schemas.py` `auth.py` `config.py` `db.py` `export.py` `timeutils.py` | 出入参、令牌、配置、会话、导出组装、时区归一 |
+| `server/manage.py` | **命令行调度工具**：建号、导入任务、排计划、回填分配、发样本编号、换令牌、校时长、造 e2e 账号、删人、看现状 |
+| `server/migrations/` | Alembic 迁移，基准 `a5434311ec63`，当前 head `22a6741867d8` |
+| `server/app/static/admin.html` | 管理页界面 |
+| `server/Dockerfile` `requirements.txt` `alembic.ini` | 部署 |
+
+### 计划与映射（`server/plans/`，**当前生效的调度数据**）
+
+| 文件 | 内容 |
+| --- | --- |
+| `display_ids.csv` | **样本编号 ↔ 数据集原始编号的唯一映射**，分析离不开它 |
+| `pool_3440.jsonl` | 当前标注池 |
+| `anchor_set_318.jsonl` | 锚点集，带 `yoe_pilot` 标记（认得出哪 20 条来自试标） |
+| `assignment_plan_P3.csv` | P3 正式分配计划（20 人 / 3758 行） |
+| `training_session_plan.csv` | 培训分配计划（4 人 + 导师） |
+| `training_session_groups.csv` | 培训分组对照表，写明每个样本由谁标 |
+
+### 测试
+
+| 路径 | 覆盖 |
+| --- | --- |
+| `server/tests/` | 后端 **99** 个：接口、权限隔离、幂等、分配、编号、迁移漂移 |
+| `tests/*.test.ts` | 前端 **37** 个：采样、会话、三层存储、文本时间轴、倍速记忆 |
+| `tests/annotation.spec.ts` | e2e **14** 个：真浏览器里的令牌、模态顺序、采样、断网、草稿 |
+
+### 分析脚本（`scripts/`）
+
+| 文件 | 作用 |
+| --- | --- |
+| `plot_va_curves.py` | 单人曲线图，一个样本四模态叠加 |
+| `plot_annotator_compare.py` | **多人对照图**，每模态一行、左效价右唤醒 |
+| `shot.mjs` | 线上页面自动截图（质检与汇报用） |
+| `generate-demo.mjs` | 生成演示素材 |
+| `plots_yoe20/` `plots_training/` | **已生成的图（存档性质）**，33 张 |
+
+### 存档（`archive/`）
+
+| 路径 | 内容 |
+| --- | --- |
+| `2026-09-16-2d-paradigm/` | **二维范式全部标注结果**，改范式前的完整切片。含全量导出、6 份单人导出、README、SHA256SUMS。240 个任务、23450 个采样点 |
+
+### 文档
+
+| 文件 | 内容 |
+| --- | --- |
+| `handover.md` | **本文件**，全程决策与踩坑记录 |
+| `README.md` | 前端说明 |
+| `server/README.md` | 后端与运维，含 e2e、备份、账号管理步骤 |
+| `AGENTS.md` | 协作约定 |
+| `deploy/` | 部署说明与备份脚本 |
+| `artifacts/` | 界面截图（存档性质） |
+
+## 数据准备四目录（**不在 git 里**）
+
+| 目录 | 关键脚本 | 关键产物 |
+| --- | --- | --- |
+| `04-conflict-sampling/0-conflict_sample_selection/` | `stage0_dedup.py`→`stage1_quality_gate.py`→`stage2a_*.py`→`stage2b_conflict.py`→`sample_annotation_pool.py`、`sample_anchor_set.py`、**`sample_backup_pool.py`** | `annotation_pool_3500.jsonl`、`anchor_set_500.jsonl`、**`backup_pool.jsonl`（939 条备份，待启用）** |
+| `06-speaker-frames/` | `annotate.py`、`apply_picks.py`、`build_gallery.py` | `frames/`（3440 张静帧）、`manifest.jsonl`、`discarded.txt`（人工剔除的 60 条） |
+| `07-text-alignment/` | `align.py`（wav2vec2 强制对齐，**永不丢词**断言）、`check_fidelity.py`、`build_review.py` | `out/align/shard-*.jsonl`（3440 条词级时间戳） |
+| `08-material-prep/` | `prepare.py`、`transcript.py`、`build_tasks.py`、**`recrop_visual.py`** | `out/media/`（四模态素材 8.1G）、`out/transcripts/`、`tasks_import.json`、`visual-backup/`（重裁前的原件） |
+
+## V3 动到哪些文件
+
+改二维罗盘为两个一维 bar、按住才采样、必须播完，预计触及：
+
+`AnnotationPad.tsx`（重写）、`Workspace.tsx`、`styles.css`、`core/sampler.ts`、
+`core/session.ts`、`types.ts`、`config.ts`、`server/app/models.py` + 新迁移、
+`api.py`、`schemas.py`、两个绘图脚本、以及 sampler / session / repository / e2e 四套测试。
+
+方案尚未拍板，三个选项（A1 同轮回拖 / A2 拆成 8 个任务 / A3 一个任务两个轮次）
+与各自代价见 2026-09-15 那一节的讨论；**我的建议是 A3**。
