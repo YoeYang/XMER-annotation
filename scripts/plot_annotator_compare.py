@@ -70,9 +70,11 @@ def main():
         name, _, path = item.partition("=")
         people.append((name, latest_attempts(path)))
 
-    fig, axes = plt.subplots(len(MODALITIES), 1, figsize=(10, 9), sharex=True)
+    # 两列：左效价、右唤醒度。唤醒度只画成色带宽度太隐晦，
+    # 而它占了一半的信息量——质检时必须能直接读出来。
+    fig, axes = plt.subplots(len(MODALITIES), 2, figsize=(13, 9), sharex=True)
     tmax = 0.0
-    for ax, (modality, label) in zip(axes, MODALITIES):
+    for row, (modality, label) in zip(axes, MODALITIES):
         tid = f"{args.sample}::{modality}"
         for i, (name, subs) in enumerate(people):
             if tid not in subs:
@@ -82,24 +84,25 @@ def main():
                 continue
             tmax = max(tmax, t.max())
             colour = PALETTE[i % len(PALETTE)]
-            hw = smooth(HW_MIN + (np.clip(a, -1, 1) + 1) / 2 * (HW_MAX - HW_MIN))
-            vs = smooth(v)
-            ax.fill_between(t, vs - hw, vs + hw, color=colour, alpha=0.25, linewidth=0)
-            ax.plot(t, vs, color=colour, linewidth=1.6,
-                    label=f"{name} ({len(t)} pts)")
-        ax.axhline(0, color="#aaa", lw=0.8, ls="--", zorder=0)
-        ax.set_ylim(-1.05, 1.05)
-        ax.set_ylabel("valence")
-        ax.set_title(label, fontsize=11, loc="left", pad=6)
-        ax.legend(loc="upper right", frameon=False, fontsize=8)
-        for side in ("top", "right"):
-            ax.spines[side].set_visible(False)
-    axes[-1].set_xlim(0, tmax)
-    axes[-1].set_xlabel("time (s)")
+            for ax, y, axis_name in ((row[0], v, "valence"), (row[1], a, "arousal")):
+                ys = smooth(y)
+                ax.plot(t, ys, color=colour, linewidth=1.6,
+                        label=f"{name} ({len(t)} pts)")
+                # 摊平的曲线画出来看不出是谁，补一个末端标记
+                ax.plot(t[-1:], ys[-1:], "o", color=colour, markersize=4)
+        for ax, axis_name in ((row[0], "valence"), (row[1], "arousal")):
+            ax.axhline(0, color="#aaa", lw=0.8, ls="--", zorder=0)
+            ax.set_ylim(-1.05, 1.05)
+            ax.set_ylabel(axis_name)
+            ax.set_title(f"{label} — {axis_name}", fontsize=10, loc="left", pad=6)
+            ax.legend(loc="upper right", frameon=False, fontsize=8)
+            for side in ("top", "right"):
+                ax.spines[side].set_visible(False)
+    for ax in axes[-1]:
+        ax.set_xlim(0, tmax)
+        ax.set_xlabel("time (s)")
     fig.suptitle(f"{args.sample} — annotator comparison", fontsize=13)
-    fig.text(0.5, 0.005, "line = valence, band width = arousal (wider = more aroused)",
-             ha="center", fontsize=8, color="#888")
-    fig.tight_layout(rect=(0, 0.02, 1, 0.98))
+    fig.tight_layout(rect=(0, 0.01, 1, 0.98))
 
     outdir = Path(args.out)
     outdir.mkdir(parents=True, exist_ok=True)
