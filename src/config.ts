@@ -1,6 +1,8 @@
 import type { Modality, Phase } from "./types";
 export const SAMPLE_RATE_HZ = 10;
-export const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5];
+// 0.1 与 0.3 是标注者要求的：素材里情绪变得太快，常速跟不上手。
+// 采样按媒体时间定频，放慢不会改变曲线的时间分辨率，只是给人更多反应余地。
+export const PLAYBACK_RATES = [0.1, 0.3, 0.5, 0.75, 1, 1.25, 1.5];
 const RATE_KEY = "xmer.playback_rate";
 /**
  * 倍速跨任务、跨刷新保持。

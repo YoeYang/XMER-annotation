@@ -12,6 +12,10 @@ import transcript from "../public/transcripts/demo.json";
 import tasks from "../public/tasks.json";
 
 afterEach(() => vi.useRealTimers());
+/** 相邻点的间隔去重后的集合，用来断言栅格是否整齐 */
+const record_spacing = (times: number[]) => [
+  ...new Set(times.slice(1).map((t, i) => +(t - times[i]).toFixed(10))),
+];
 describe("原始媒体时间采样", () => {
   it("映射四角、中心与区域外坐标，纵轴向上增加", () => {
     expect(normalizePoint(0, 0, 100, 100)).toEqual({ valence: -1, arousal: 1 });
@@ -28,7 +32,50 @@ describe("原始媒体时间采样", () => {
       arousal: -1,
     });
   });
-  it("鼠标静止仍采样，使用倍速后的实际媒体时间，不重复启动定时器", () => {
+  /**
+   * 按倍速播放一段媒体：墙上时钟每 25ms 推进一次，媒体时间按 rate 前进。
+   * mediaSeconds 刻意取格点之间的值（如 1.95），否则末点是否被收进来
+   * 要看浮点误差，断言会变得不稳。
+   */
+  const play = (rate: number, mediaSeconds: number) => {
+    let time = 0;
+    const record = vi.fn(),
+      sampler = new Sampler(
+        10,
+        () => ({ time, point: { valence: 0.3, arousal: 0.7 }, playing: true }),
+        record,
+      );
+    sampler.start();
+    while (time < mediaSeconds) {
+      time = Math.min(time + (25 * rate) / 1000, mediaSeconds);
+      vi.advanceTimersByTime(25);
+    }
+    sampler.stop();
+    return record;
+  };
+
+  it("采样密度只由媒体时间决定，与播放倍速无关", () => {
+    // 采样若挂在墙上时钟上，0.5 倍速会采出两倍的点，
+    // 不同倍速标出来的曲线时间栅格对不齐，没法直接比较。
+    vi.useFakeTimers();
+    for (const rate of [0.1, 0.3, 0.5, 1, 1.5]) {
+      const record = play(rate, 1.95);
+      const times = record.mock.calls.map((c) => c[0]);
+      expect(times.length, `倍速 ${rate}`).toBe(20);
+      expect(times.slice(0, 4), `倍速 ${rate}`).toEqual([0, 0.1, 0.2, 0.3]);
+      expect(times.at(-1), `倍速 ${rate}`).toBeCloseTo(1.9, 10);
+    }
+  });
+
+  it("点落在统一的 0.1 秒栅格上，倍速不同也能逐点对齐", () => {
+    vi.useFakeTimers();
+    const slow = play(0.3, 0.95).mock.calls.map((c) => c[0]);
+    const fast = play(1.5, 0.95).mock.calls.map((c) => c[0]);
+    expect(slow).toEqual(fast);
+    expect(record_spacing(slow)).toEqual([0.1]);
+  });
+
+  it("鼠标静止仍持续采样，不重复启动定时器", () => {
     vi.useFakeTimers();
     let time = 0;
     const record = vi.fn(),
@@ -39,13 +86,13 @@ describe("原始媒体时间采样", () => {
       );
     sampler.start();
     sampler.start();
-    for (let i = 1; i <= 10; i++) {
-      time = i * 0.15;
-      vi.advanceTimersByTime(100);
+    for (let i = 1; i <= 39; i++) {
+      time = i * 0.025;
+      vi.advanceTimersByTime(25);
     }
-    expect(record).toHaveBeenCalledTimes(11);
+    expect(record).toHaveBeenCalledTimes(10);
     expect(record.mock.calls.at(-1)).toEqual([
-      1.5,
+      0.9,
       { valence: 0.3, arousal: 0.7 },
     ]);
     sampler.stop();

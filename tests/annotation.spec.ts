@@ -143,15 +143,25 @@ test("选过的倍速在换任务和刷新之后仍然保持", async ({ page }) 
   await open(page);
   await openTask(page, "仅视觉");
   const speed = page.getByLabel("播放速度");
-  await speed.selectOption("0.5");
+  // 0.1 与 0.3 是标注者要求加的：常速下情绪变得太快，手跟不上
+  await expect(speed.locator("option")).toHaveText([
+    "0.1×",
+    "0.3×",
+    "0.5×",
+    "0.75×",
+    "1×",
+    "1.25×",
+    "1.5×",
+  ]);
+  await speed.selectOption("0.1");
 
   await openTask(page, "仅音频");
-  await expect(page.getByLabel("播放速度")).toHaveValue("0.5");
+  await expect(page.getByLabel("播放速度")).toHaveValue("0.1");
 
   await page.reload();
   await expect(page.locator(".sample-list")).toBeVisible();
   await openTask(page, "仅视觉");
-  await expect(page.getByLabel("播放速度")).toHaveValue("0.5");
+  await expect(page.getByLabel("播放速度")).toHaveValue("0.1");
 });
 
 // --------------------------------------------------------------- 文本模态
