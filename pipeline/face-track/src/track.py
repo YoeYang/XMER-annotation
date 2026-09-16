@@ -25,6 +25,7 @@ import trackcore as tc
 from datapaths import FRAMES_DIR, MEDIA_DIR
 
 MANIFEST = FRAMES_DIR / "out" / "manifest.jsonl"
+OVERRIDES = Path(__file__).resolve().parents[1] / "speaker_overrides.jsonl"
 FRAMES = FRAMES_DIR / "out" / "frames"
 YUNET = FRAMES_DIR / "models" / "face_detection_yunet_2023mar.onnx"
 SFACE = FRAMES_DIR / "models" / "face_recognition_sface_2021dec.onnx"
@@ -81,6 +82,71 @@ def _embed(frame, face):
     return feat / n if n else feat
 
 
+def _overrides():
+    """人工指认表：样本 -> 几帧里说话人脸的位置。
+
+    少数样本的说话人静帧分辨率太低或太糊，正常门限下检不出脸，于是拿不到
+    身份模板、视频根本没被打开。**不为这十来条放宽全局检测门限**——那是拿
+    3440 条的判定口径去迁就它们。改由人指认「说话人是这张脸」，
+    在指认出来的小框上再跑检测，标准一个字不变。
+    """
+    table = {}
+    if not OVERRIDES.exists():
+        return table
+    with OVERRIDES.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rec = json.loads(line)
+                table[rec["sample_id"]] = rec["picks"]
+    return table
+
+
+_OVERRIDES = None
+
+
+def override_template(frames, picks, margin=0.35):
+    """从人工指认的几帧里建身份模板，取各帧特征的平均。
+
+    多个锚点平均比单帧稳——单帧万一正好是侧脸或运动模糊，模板就弱。
+    在框出来的小区域上检测，比全图容易得多，所以这里用的仍是 tc.MIN_DET。
+    """
+    import cv2
+    import numpy as np
+
+    vecs = []
+    for pick in picks:
+        i = pick["frame"]
+        if not (0 <= i < len(frames)):
+            continue
+        frame = frames[i]
+        H, W = frame.shape[:2]
+        x, y, w, h = pick["bbox"]
+        cx, cy = x + w / 2, y + h / 2
+        side = max(w, h) * (1 + 2 * margin)
+        x0, y0 = int(round(cx - side / 2)), int(round(cy - side / 2))
+        x1, y1 = int(round(x0 + side)), int(round(y0 + side))
+        pl, pt = max(0, -x0), max(0, -y0)
+        pr, pb = max(0, x1 - W), max(0, y1 - H)
+        patch = frame[max(0, y0):min(H, y1), max(0, x0):min(W, x1)]
+        if patch.size == 0:
+            continue
+        if pl or pt or pr or pb:
+            patch = cv2.copyMakeBorder(patch, pt, pb, pl, pr, cv2.BORDER_REPLICATE)
+        faces = _faces(patch)
+        if not faces:
+            # 试过退回「不对齐直接取特征」——SFace 没有五点对齐时特征太弱，
+            # 实测建出来的模板一个锚点都匹配不上，等于悄悄产生劣质模板。不如失败得干脆。
+            continue
+        face = max(faces, key=lambda f: f["bbox"][2] * f["bbox"][3])
+        vecs.append(_embed(patch, face))
+    if not vecs:
+        return None
+    mean = np.mean(vecs, axis=0)
+    n = float(np.linalg.norm(mean))
+    return mean / n if n else None
+
+
 def template(sample_id):
     """从已核对的说话人静帧算身份模板。静帧是 512 见方的人脸特写，检测很稳。"""
     import cv2
@@ -122,14 +188,25 @@ def process(sample_id):
         _write(out_path, sample_id, 0, 0, None, None, {}, "drop", ["video_missing"])
         return "drop"
 
-    tmpl, err = template(sample_id)
-    if tmpl is None:
-        _write(out_path, sample_id, 0, 0, None, None, {}, "drop", [err])
-        return "drop"
+    global _OVERRIDES
+    if _OVERRIDES is None:
+        _OVERRIDES = _overrides()
+    picks = _OVERRIDES.get(sample_id)
 
+    # 有人工指认的样本要先读视频——模板就建在视频的那几帧上
     frames, fps = read_video(video)
     if not frames:
-        _write(out_path, sample_id, fps, 0, None, None, {}, "drop", ["no_frames"])
+        _write(out_path, sample_id, 0, 0, None, None, {}, "drop", ["no_frames"])
+        return "drop"
+
+    if picks:
+        tmpl, err = override_template(frames, picks), None
+        if tmpl is None:
+            err = "override_template_failed"
+    else:
+        tmpl, err = template(sample_id)
+    if tmpl is None:
+        _write(out_path, sample_id, fps, len(frames), None, None, {}, "drop", [err])
         return "drop"
 
     h, w = frames[0].shape[:2]
@@ -209,6 +286,7 @@ def _write(path, sample_id, fps, n_frames, wh, crop, stats, status, reasons):
         "w": wh[0] if wh else 0,
         "h": wh[1] if wh else 0,
         "crop": crop,
+        "template": "override" if _OVERRIDES and sample_id in _OVERRIDES else "portrait",
         "stats": stats,
         "status": status,
         "reasons": reasons,
