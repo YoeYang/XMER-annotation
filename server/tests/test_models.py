@@ -236,3 +236,69 @@ def test_one_submission_per_attempt(
         )
     with pytest.raises(IntegrityError):
         session.commit()
+
+
+# --------------------------------------------------------- V3：维度与五模态
+
+
+def test_attempt_rejects_unknown_dimension(session, annotator, task):
+    """一轮只标一个维度，写进来的必须是 valence / arousal 之一。"""
+    session.add(
+        Attempt(
+            attempt_id="att-bad-dim",
+            task_id=task.task_id,
+            annotator_id=annotator.annotator_id,
+            media_id=task.media_id,
+            modality=task.modality,
+            mode="annotation",
+            dimension="both",
+            status="recording",
+            task_snapshot={},
+            events=[],
+            sample_rate_hz=10,
+            started_at=datetime.now(timezone.utc),
+        )
+    )
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+
+
+def test_task_rejects_retired_visual_modality(session):
+    """V3 把 visual 拆成了 face / body，旧模态名不该还能写进来——
+    放行就等于让两种范式的数据混在一张表里。"""
+    session.add(
+        Task(
+            task_id="EX-OLD",
+            media_id="m-old",
+            source_id="meld_dia11_utt9",
+            title="旧模态",
+            modality="visual",
+            src="/media/x",
+            duration=1.0,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+
+
+def test_familiarization_plays_defaults_to_zero(session, annotator, task):
+    """熟悉页播放次数是质检信号，没上报时记 0 而不是空。"""
+    row = Attempt(
+        attempt_id="att-fam",
+        task_id=task.task_id,
+        annotator_id=annotator.annotator_id,
+        media_id=task.media_id,
+        modality=task.modality,
+        mode="annotation",
+        dimension="arousal",
+        status="recording",
+        task_snapshot={},
+        events=[],
+        sample_rate_hz=10,
+        started_at=datetime.now(timezone.utc),
+    )
+    session.add(row)
+    session.commit()
+    assert row.familiarization_plays == 0

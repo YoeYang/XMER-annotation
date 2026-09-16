@@ -26,6 +26,9 @@ class TaskOut(BaseModel):
     target: str
     demo: bool
     timeline_origin: float
+    # 该标注者分配队列里的顺序。前端按模态分块后用它算「面部 3/20」这种
+    # 块内序号——序号只在渲染时算，不落库，也不进导出。
+    order_index: int
     speaker_ref_src: str | None
     speaker_name: str | None
 
@@ -44,6 +47,8 @@ class AttemptIn(BaseModel):
     media_id: str
     modality: str
     mode: Literal["preview", "annotation"]
+    dimension: Literal["valence", "arousal"]
+    familiarization_plays: int = 0
     status: Literal["recording", "paused", "completed", "interrupted"]
     task_snapshot: dict[str, Any]
     events: list[dict[str, Any]] = Field(default_factory=list)
@@ -64,6 +69,8 @@ class AttemptOut(BaseModel):
     media_id: str
     modality: str
     mode: str
+    dimension: str
+    familiarization_plays: int
     status: str
     task_snapshot: dict[str, Any]
     sample_rate_hz: int

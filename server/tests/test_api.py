@@ -12,9 +12,11 @@ NOW = datetime.now(timezone.utc).isoformat()
 def attempt_body(task_id: str = "EXAMPLE-001", **overrides) -> dict:
     body = {
         "task_id": task_id,
-        "media_id": "example-visual",
-        "modality": "visual",
+        "media_id": "example-face",
+        "modality": "face",
         "mode": "annotation",
+        "dimension": "valence",
+        "familiarization_plays": 2,
         "status": "recording",
         "task_snapshot": {"task_id": task_id},
         "events": [],
@@ -28,7 +30,7 @@ def attempt_body(task_id: str = "EXAMPLE-001", **overrides) -> dict:
 
 def samples(*indices: int) -> list[dict]:
     return [
-        {"sample_index": i, "media_time": i * 0.1, "valence": 0.1, "arousal": 0.2}
+        {"sample_index": i, "media_time": i * 0.1, "value": 0.1}
         for i in indices
     ]
 
@@ -398,7 +400,8 @@ def test_queue_puts_full_video_after_the_single_modalities(
         ("EX-AV", "audiovisual"),
         ("EX-TX", "text"),
         ("EX-AU", "audio"),
-        ("EX-VI", "visual"),
+        ("EX-BD", "body"),
+        ("EX-FC", "face"),
     ):
         session.add(
             Task(
@@ -423,7 +426,7 @@ def test_queue_puts_full_video_after_the_single_modalities(
     session.commit()
 
     order = [t["modality"] for t in client.get("/api/me", headers=auth).json()["tasks"]]
-    assert order == ["visual", "audio", "text", "audiovisual"]
+    assert order == ["face", "body", "audio", "text", "audiovisual"]
 
 
 # --------------------------------------------------------------- 读回采样点
@@ -445,7 +448,7 @@ def test_can_read_back_own_samples_in_order(
     response = client.get("/api/attempts/att-1/samples", headers=assigned)
     assert response.status_code == 200
     assert [s["sample_index"] for s in response.json()] == [0, 1, 10, 11]
-    assert response.json()[0]["valence"] == 0.1
+    assert response.json()[0]["value"] == 0.1
 
 
 def test_cannot_read_another_annotators_samples(
@@ -457,3 +460,51 @@ def test_cannot_read_another_annotators_samples(
     )
     assert client.get("/api/attempts/att-1/samples", headers=other_auth).status_code == 404
     assert client.get("/api/attempts/nope/samples", headers=assigned).status_code == 404
+
+
+# --------------------------------------------------- V3：order_index 与维度
+
+
+def test_me_serves_order_index_for_block_numbering(
+    client, session, annotator, auth, task, second_task
+):
+    """前端要按模态分块算「面部 3/20」这种块内序号，靠的就是 order_index。
+
+    它挂在 assignments 上而不是 tasks 上——同一个任务分给不同的人，
+    队列位置本来就不同，所以必须连着分配记录一起取。
+    """
+    from app.models import Assignment
+
+    for t, idx in ((task, 7), (second_task, 3)):
+        session.add(
+            Assignment(
+                annotator_id=annotator.annotator_id,
+                task_id=t.task_id,
+                phase=annotator.phase,
+                order_index=idx,
+            )
+        )
+    session.commit()
+
+    tasks = client.get("/api/me", headers=auth).json()["tasks"]
+    got = {t["task_id"]: t["order_index"] for t in tasks}
+    assert got == {task.task_id: 7, second_task.task_id: 3}
+    # 队列顺序也按它排
+    assert [t["task_id"] for t in tasks] == [second_task.task_id, task.task_id]
+
+
+def test_attempt_round_trips_dimension_and_familiarization(client, assigned):
+    """维度与熟悉页播放次数要原样存下并读回——前者决定这轮标的是什么，
+    后者是质检信号（只播 0.3 遍就上手的人，质量要单独看）。"""
+    body = attempt_body(dimension="arousal", familiarization_plays=5)
+    response = client.put("/api/attempts/att-dim", json=body, headers=assigned)
+    assert response.status_code == 200
+    assert response.json()["dimension"] == "arousal"
+    assert response.json()["familiarization_plays"] == 5
+
+
+def test_attempt_rejects_unknown_dimension(client, assigned):
+    response = client.put(
+        "/api/attempts/att-bad", json=attempt_body(dimension="both"), headers=assigned
+    )
+    assert response.status_code == 422

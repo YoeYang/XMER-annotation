@@ -2,7 +2,16 @@ import os
 from dataclasses import dataclass
 
 PHASES = ("pilot", "training", "main")
-MODALITIES = ("visual", "audio", "text", "audiovisual")
+
+MODALITIES = ("face", "body", "audio", "text", "audiovisual")
+"""V3 把原来的 `visual` 拆成 `face`（只看脸）与 `body`（脸被遮住、只看身体）。
+
+顺序即标注顺序：视觉两路在前、音频文本居中、完整视频压轴，
+与前端 `taskFlow.ts` 的 MODALITY_ORDER 一致，两边改动必须同步。
+"""
+
+DIMENSIONS = ("valence", "arousal")
+"""V3 一次只标一个维度。一个子任务要效价轮与唤醒轮都提交才算完成。"""
 
 
 @dataclass(frozen=True)

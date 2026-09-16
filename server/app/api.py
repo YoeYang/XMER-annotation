@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .auth import current_annotator, get_session
+from .config import MODALITIES
 from .export import assemble_samples, build_export
 from .models import Annotator, Assignment, Attempt, SampleChunk, Submission, Task
 from .schemas import (
@@ -21,15 +22,26 @@ from .schemas import (
 
 router = APIRouter(prefix="/api")
 
-# 完整视频排在三个单模态之后。同一样本的四个任务 order_index 相同，
-# 不显式定义次级排序的话数据库返回的顺序是未定义的——而客户端的默认选中
-# 与「下一个样本」都跟着这个顺序走，等于把防污染的排序绕过去。
+# 次级排序。order_index 相同时若不定义先后，数据库返回的顺序是未定义的——
+# 而客户端的默认选中与「下一条」都跟着这个顺序走，等于把防污染的排序绕过去。
+# 直接由 config.MODALITIES 的次序生成，避免这里和常量表各写一份而漂移。
 MODALITY_RANK = case(
-    (Task.modality == "visual", 0),
-    (Task.modality == "audio", 1),
-    (Task.modality == "text", 2),
-    else_=3,
+    *[(Task.modality == m, i) for i, m in enumerate(MODALITIES)],
+    else_=len(MODALITIES),
 )
+
+
+def _task_out(task: Task, order_index: int) -> TaskOut:
+    """把任务和它在这位标注者队列里的位置拼成一条下发记录。
+
+    字段从 TaskOut 的定义反查，不手抄一遍——手抄的那份迟早和 schema 漂移。
+    """
+    fields = {
+        name: getattr(task, name)
+        for name in TaskOut.model_fields
+        if name != "order_index"
+    }
+    return TaskOut(**fields, order_index=order_index)
 
 
 def _assigned_task(session: Session, annotator: Annotator, task_id: str) -> Task:
@@ -60,8 +72,10 @@ def read_me(
     annotator: Annotator = Depends(current_annotator),
     session: Session = Depends(get_session),
 ) -> MeOut:
-    tasks = session.scalars(
-        select(Task)
+    # order_index 挂在 assignments 上而不是 tasks 上——同一个任务分给不同的人，
+    # 队列位置本来就不同。所以要连着取出来，再拼进 TaskOut。
+    rows = session.execute(
+        select(Task, Assignment.order_index)
         .join(Assignment, Assignment.task_id == Task.task_id)
         .where(
             Assignment.annotator_id == annotator.annotator_id,
@@ -73,7 +87,7 @@ def read_me(
         annotator_id=annotator.annotator_id,
         display_name=annotator.display_name,
         phase=annotator.phase,
-        tasks=[TaskOut.model_validate(t) for t in tasks],
+        tasks=[_task_out(task, order_index) for task, order_index in rows],
     )
 
 

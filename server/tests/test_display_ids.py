@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.assignments import assign_display_ids
 from app.models import Assignment, Task
 
-MODALITIES = ["visual", "audio", "text", "audiovisual"]
+MODALITIES = ["face", "body", "audio", "text", "audiovisual"]
 
 
 def make_samples(session: Session, source_ids: list[str]) -> None:
@@ -103,7 +103,7 @@ def test_换令牌后旧链接失效_新链接可用且数据保留(
     session.add(
         Assignment(
             annotator_id=annotator.annotator_id,
-            task_id="meld_dia11_utt9::visual",
+            task_id="meld_dia11_utt9::face",
             phase="pilot",
             order_index=0,
             is_anchor=False,

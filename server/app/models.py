@@ -14,7 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .config import MODALITIES, PHASES
+from .config import DIMENSIONS, MODALITIES, PHASES
 from .db import Base
 
 # 生产库用 JSONB（更紧凑、解析更快）；测试跑 SQLite 时退回通用 JSON
@@ -114,6 +114,14 @@ class Attempt(Base):
     media_id: Mapped[str] = mapped_column(Text, nullable=False)
     modality: Mapped[str] = mapped_column(Text, nullable=False)
     mode: Mapped[str] = mapped_column(Text, nullable=False)
+    # V3：一轮只标一个维度。效价轮与唤醒轮是两条独立的 attempt，
+    # 两者都提交了这个子任务才算完成。
+    dimension: Mapped[str] = mapped_column(Text, nullable=False)
+    # 熟悉页真正播了几遍。既是流程记录，也是质检信号——
+    # 只播 0.3 遍就上手的人，后续标注质量要单独看。
+    familiarization_plays: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
     status: Mapped[str] = mapped_column(Text, nullable=False)
     task_snapshot: Mapped[dict] = mapped_column(JsonCol, nullable=False)
     events: Mapped[list] = mapped_column(JsonCol, nullable=False, default=list)
@@ -130,6 +138,9 @@ class Attempt(Base):
 
     __table_args__ = (
         CheckConstraint(_one_of("modality", MODALITIES), name="ck_attempts_modality"),
+        CheckConstraint(
+            _one_of("dimension", DIMENSIONS), name="ck_attempts_dimension"
+        ),
         CheckConstraint(
             _one_of("mode", ("preview", "annotation")), name="ck_attempts_mode"
         ),
