@@ -5,19 +5,33 @@ import { SyncingRepository } from "../src/storage/syncingRepository";
 import type { HttpRepository } from "../src/storage/httpRepository";
 import { makeSample } from "../src/core/sampler";
 import type { Attempt, Task } from "../src/types";
-import tasks from "../public/tasks.json";
+
+const task: Task = {
+  task_id: "source::body",
+  media_id: "source-body",
+  display_id: "S0001",
+  modality: "body",
+  src: "/media/example/visual.mp4",
+  duration: 1.95,
+  target: "目标人物",
+  demo: true,
+  timeline_origin: 0,
+  order_index: 0,
+};
 
 function fixture(overrides: Partial<Attempt> = {}): Attempt {
   return {
     schema_version: 1,
     attempt_id: crypto.randomUUID(),
-    task_id: "DEMO-001",
+    task_id: task.task_id,
     annotator_id: "A001",
-    media_id: "demo-visual",
-    modality: "visual",
+    media_id: task.media_id,
+    modality: task.modality,
     mode: "annotation",
+    dimension: "valence",
+    familiarization_plays: 2,
     status: "completed",
-    task_snapshot: tasks[0] as Task,
+    task_snapshot: task,
     sample_rate_hz: 10,
     started_at: new Date().toISOString(),
     completed_at: new Date().toISOString(),
@@ -73,10 +87,7 @@ describe("本地先写、后台同步", () => {
     remote.failNext(99);
     const sync = new SyncingRepository(db, remote.repository, [10_000]);
     const attempt = fixture(),
-      sample = makeSample({ ...attempt, sample_count: 0 }, 0, {
-        valence: 0.2,
-        arousal: 0.4,
-      });
+      sample = makeSample({ ...attempt, sample_count: 0 }, 0, 0.2);
 
     await sync.checkpoint(attempt, [sample]);
     await vi.waitFor(() => expect(sync.getState().lastError).toBe("网络不可达"));
@@ -124,10 +135,7 @@ describe("本地先写、后台同步", () => {
       remote = fakeRemote();
     const sync = new SyncingRepository(db, remote.repository, [1]);
     const attempt = fixture(),
-      sample = makeSample({ ...attempt, sample_count: 0 }, 0, {
-        valence: 0.1,
-        arousal: 0.1,
-      });
+      sample = makeSample({ ...attempt, sample_count: 0 }, 0, 0.1);
     await sync.checkpoint(attempt, [sample]);
     await sync.drain();
 

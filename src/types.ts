@@ -1,9 +1,10 @@
-export type Modality = "visual" | "audio" | "text" | "audiovisual";
+export type Modality = "audio" | "text" | "face" | "body" | "audiovisual";
+export type Dimension = "valence" | "arousal";
+export type FlowPage = "familiarization" | Dimension;
 export interface Task {
   task_id: string;
   media_id: string;
-  // 样本的不透明编号（S0001…）。同一样本的四个任务共用一个，
-  // 目录与标题都只显示它：原始编号带着数据集名字，会透露样本来源。
+  // 内部样本编号；五个模态子任务共用一个。标注者界面不得渲染此字段。
   display_id: string;
   modality: Modality;
   src: string;
@@ -11,6 +12,8 @@ export interface Task {
   target: string;
   demo: boolean;
   timeline_origin: number;
+  /** 当前标注者分配表中的顺序，仅用于前端计算模态块内序号。 */
+  order_index: number;
   // 说话人身份参考，由预处理流水线产出；属任务说明，不是被评定的材料
   speaker_ref_src?: string | null;
   speaker_name?: string | null;
@@ -24,11 +27,7 @@ export interface Transcript {
   duration: number;
   sentences: { start: number; end: number; tokens: Segment[] }[];
 }
-export interface Point {
-  valence: number;
-  arousal: number;
-}
-export interface Sample extends Point {
+export interface Sample {
   task_id: string;
   annotator_id: string;
   modality: Modality;
@@ -37,6 +36,7 @@ export interface Sample extends Point {
   sample_index: number;
   media_time: number;
   wall_time: string;
+  value: number;
   is_valid: boolean;
 }
 export interface SessionEvent {
@@ -55,7 +55,9 @@ export interface Attempt {
   annotator_id: string;
   media_id: string;
   modality: Modality;
-  mode: "preview" | "annotation";
+  mode: "annotation";
+  dimension: Dimension;
+  familiarization_plays: number;
   status: AttemptStatus;
   task_snapshot: Task;
   sample_rate_hz: number;
@@ -89,7 +91,8 @@ export type Phase =
   | "loading"
   | "ready"
   | "starting"
-  | "preview"
+  | "familiarizing"
+  | "hold-delay"
   | "recording"
   | "paused"
   | "buffering"
@@ -100,7 +103,9 @@ export interface SessionView {
   time: number;
   duration: number;
   rate: number;
-  point: Point | null;
+  value: number | null;
+  dimension: Dimension | null;
+  familiarizationPlays: number;
   attempt: Attempt | null;
   save: "idle" | "saving" | "saved" | "error";
   savedAt: string | null;

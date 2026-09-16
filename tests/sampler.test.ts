@@ -1,15 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { normalizePoint, Sampler } from "../src/core/sampler";
-import { rememberedRate, rememberRate } from "../src/config";
+import { normalizeValue, Sampler } from "../src/core/sampler";
 import {
   silentWav,
   transcriptTokens,
   validateTasks,
   validateTranscript,
 } from "../src/core/textTimeline";
-import type { Transcript } from "../src/types";
+import type { Task, Transcript } from "../src/types";
 import transcript from "../public/transcripts/demo.json";
 import tasks from "../public/tasks.json";
+
+const validTask = {
+  ...tasks[1],
+  modality: "audio",
+  order_index: 0,
+} as Task;
 
 afterEach(() => vi.useRealTimers());
 /** 相邻点的间隔去重后的集合，用来断言栅格是否整齐 */
@@ -17,20 +22,12 @@ const record_spacing = (times: number[]) => [
   ...new Set(times.slice(1).map((t, i) => +(t - times[i]).toFixed(10))),
 ];
 describe("原始媒体时间采样", () => {
-  it("映射四角、中心与区域外坐标，纵轴向上增加", () => {
-    expect(normalizePoint(0, 0, 100, 100)).toEqual({ valence: -1, arousal: 1 });
-    expect(normalizePoint(100, 100, 100, 100)).toEqual({
-      valence: 1,
-      arousal: -1,
-    });
-    expect(normalizePoint(50, 50, 100, 100)).toEqual({
-      valence: 0,
-      arousal: 0,
-    });
-    expect(normalizePoint(-5, 110, 100, 100)).toEqual({
-      valence: -1,
-      arousal: -1,
-    });
+  it("把横向位置映射到单维值，并将滑出区域的指针钳在端点", () => {
+    expect(normalizeValue(0, 100)).toBe(-1);
+    expect(normalizeValue(100, 100)).toBe(1);
+    expect(normalizeValue(50, 100)).toBe(0);
+    expect(normalizeValue(-5, 100)).toBe(-1);
+    expect(normalizeValue(110, 100)).toBe(1);
   });
   /**
    * 按倍速播放一段媒体：墙上时钟每 25ms 推进一次，媒体时间按 rate 前进。
@@ -42,7 +39,7 @@ describe("原始媒体时间采样", () => {
     const record = vi.fn(),
       sampler = new Sampler(
         10,
-        () => ({ time, point: { valence: 0.3, arousal: 0.7 }, playing: true }),
+        () => ({ time, value: 0.3, playing: true }),
         record,
       );
     sampler.start();
@@ -58,7 +55,7 @@ describe("原始媒体时间采样", () => {
     // 采样若挂在墙上时钟上，0.5 倍速会采出两倍的点，
     // 不同倍速标出来的曲线时间栅格对不齐，没法直接比较。
     vi.useFakeTimers();
-    for (const rate of [0.1, 0.3, 0.5, 1, 1.5]) {
+    for (const rate of [0.1, 0.3, 0.5, 0.7, 1]) {
       const record = play(rate, 1.95);
       const times = record.mock.calls.map((c) => c[0]);
       expect(times.length, `倍速 ${rate}`).toBe(20);
@@ -69,8 +66,8 @@ describe("原始媒体时间采样", () => {
 
   it("点落在统一的 0.1 秒栅格上，倍速不同也能逐点对齐", () => {
     vi.useFakeTimers();
-    const slow = play(0.3, 0.95).mock.calls.map((c) => c[0]);
-    const fast = play(1.5, 0.95).mock.calls.map((c) => c[0]);
+    const slow = play(0.1, 0.95).mock.calls.map((c) => c[0]);
+    const fast = play(1, 0.95).mock.calls.map((c) => c[0]);
     expect(slow).toEqual(fast);
     expect(record_spacing(slow)).toEqual([0.1]);
   });
@@ -81,7 +78,7 @@ describe("原始媒体时间采样", () => {
     const record = vi.fn(),
       sampler = new Sampler(
         10,
-        () => ({ time, point: { valence: 0.3, arousal: 0.7 }, playing: true }),
+        () => ({ time, value: 0.3, playing: true }),
         record,
       );
     sampler.start();
@@ -91,10 +88,7 @@ describe("原始媒体时间采样", () => {
       vi.advanceTimersByTime(25);
     }
     expect(record).toHaveBeenCalledTimes(10);
-    expect(record.mock.calls.at(-1)).toEqual([
-      0.9,
-      { valence: 0.3, arousal: 0.7 },
-    ]);
+    expect(record.mock.calls.at(-1)).toEqual([0.9, 0.3]);
     sampler.stop();
   });
   it("暂停或缓冲时不产生重复时间样本，恢复后继续，结束后停止", () => {
@@ -102,11 +96,7 @@ describe("原始媒体时间采样", () => {
     let time = 0,
       playing = true;
     const record = vi.fn(),
-      sampler = new Sampler(
-        10,
-        () => ({ time, point: { valence: 0, arousal: 0 }, playing }),
-        record,
-      );
+      sampler = new Sampler(10, () => ({ time, value: 0, playing }), record);
     sampler.start();
     vi.advanceTimersByTime(1000);
     expect(record).toHaveBeenCalledTimes(1);
@@ -164,7 +154,8 @@ describe("文本与任务时间轴", () => {
     const full =
       "有时候，情绪很轻，却很清晰。停一停，感受此刻的变化。让你的感知，随时间留下记录。";
     // 未开口、句间停顿、播完之后，整段都必须完整呈现——空屏是 V2 的 bug
-    for (const t of [0, 0.5, 4.5, 11.9, 12, 99]) expect(line(doc, t)).toBe(full);
+    for (const t of [0, 0.5, 4.5, 11.9, 12, 99])
+      expect(line(doc, t)).toBe(full);
     expect(said(doc, 0)).toBe("");
     expect(said(doc, 0.5)).toBe("有时候，");
     expect(said(doc, 1.2)).toBe("有时候，");
@@ -191,8 +182,8 @@ describe("文本与任务时间轴", () => {
     doc.sentences[0].tokens[1].start = 0.7;
     expect(() => validateTranscript(doc, 12)).toThrow();
     expect(() => validateTranscript(transcript, 10)).toThrow();
-    expect(() => validateTasks([...tasks, tasks[0]])).toThrow();
-    expect(() => validateTasks([{ ...tasks[0], duration: 0 }])).toThrow();
+    expect(() => validateTasks([validTask, validTask])).toThrow();
+    expect(() => validateTasks([{ ...validTask, duration: 0 }])).toThrow();
   });
   it("无声媒体资源具有精确的 PCM 时长并限制无效输入", async () => {
     const blob = silentWav(12),
@@ -200,45 +191,5 @@ describe("文本与任务时间轴", () => {
     expect(view.getUint32(40, true) / view.getUint32(28, true)).toBe(12);
     expect(() => silentWav(Infinity)).toThrow();
     expect(() => silentWav(3601)).toThrow();
-  });
-});
-
-describe("倍速记忆", () => {
-  const fake = () => {
-    const store = new Map<string, string>();
-    return {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => void store.set(k, v),
-    };
-  };
-  afterEach(() => {
-    Reflect.deleteProperty(globalThis, "localStorage");
-  });
-
-  it("记住上次选的倍速，换任务和刷新后都还在", () => {
-    Object.defineProperty(globalThis, "localStorage", {
-      value: fake(),
-      configurable: true,
-    });
-    expect(rememberedRate()).toBe(1);
-    rememberRate(0.5);
-    expect(rememberedRate()).toBe(0.5);
-  });
-
-  it("存储被禁用或值不合法时退回 1 倍速，不抛错", () => {
-    Object.defineProperty(globalThis, "localStorage", {
-      get() {
-        throw new Error("隐私模式下禁用");
-      },
-      configurable: true,
-    });
-    expect(rememberedRate()).toBe(1);
-    expect(() => rememberRate(0.5)).not.toThrow();
-
-    Object.defineProperty(globalThis, "localStorage", {
-      value: { getItem: () => "9", setItem: () => {} },
-      configurable: true,
-    });
-    expect(rememberedRate()).toBe(1);
   });
 });

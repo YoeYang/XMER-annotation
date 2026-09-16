@@ -1,8 +1,14 @@
-import { rememberedRate, rememberRate, SAMPLE_RATE_HZ } from "../config";
+import {
+  annotationRate,
+  rememberAnnotationRate,
+  FAMILIARIZATION_RATE,
+  HOLD_START_DELAY_MS,
+  SAMPLE_RATE_HZ,
+} from "../config";
 import type {
   Attempt,
+  Dimension,
   ExportData,
-  Point,
   Sample,
   SessionView,
   Task,
@@ -21,6 +27,13 @@ export class AnnotationSession {
   private listeners = new Set<() => void>();
   private detach: (() => void) | null = null;
   private disposed = false;
+  private holding = false;
+  private holdTimer: ReturnType<typeof setTimeout> | null = null;
+  private familiarizationBase = 0;
+  private familiarizationLoops = 0;
+  private internalSeek = false;
+  private preferredRate = annotationRate();
+
   constructor(
     readonly task: Task,
     readonly annotator: string,
@@ -30,8 +43,10 @@ export class AnnotationSession {
       phase: "loading",
       time: 0,
       duration: task.duration,
-      rate: rememberedRate(),
-      point: null,
+      rate: FAMILIARIZATION_RATE,
+      value: null,
+      dimension: null,
+      familiarizationPlays: 0,
       attempt: null,
       save: "idle",
       savedAt: null,
@@ -42,36 +57,39 @@ export class AnnotationSession {
       SAMPLE_RATE_HZ,
       () => ({
         time: this.media?.currentTime ?? 0,
-        point: this.view.point ?? { valence: 0, arousal: 0 },
+        value: this.view.value ?? 0,
         playing:
+          this.holding &&
           this.view.phase === "recording" &&
           !!this.media &&
           !this.media.paused &&
           !this.media.seeking &&
           this.media.readyState >= 3,
       }),
-      (time, point) => this.record(time, point),
+      (time, value) => this.record(time, value),
     );
   }
+
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
+    return () => this.listeners.delete(listener);
   };
+
   private emit() {
     this.view = {
       ...this.view,
       attempt: this.view.attempt ? { ...this.view.attempt } : null,
     };
-    this.listeners.forEach((fn) => fn());
+    this.listeners.forEach((listener) => listener());
   }
-  private active() {
+
+  private activeAttempt() {
     return (
       this.view.attempt &&
       ["recording", "paused"].includes(this.view.attempt.status)
     );
   }
+
   private event(type: string) {
     const attempt = this.view.attempt;
     if (!attempt) return;
@@ -84,9 +102,11 @@ export class AnnotationSession {
     });
     this.version++;
   }
+
   private persist() {
     void this.flush().catch(() => {});
   }
+
   async flush(): Promise<void> {
     if (this.saving) {
       await this.saving;
@@ -94,9 +114,9 @@ export class AnnotationSession {
       return;
     }
     if (!this.view.attempt || this.version === this.savedVersion) return;
-    const attempt = structuredClone(this.view.attempt),
-      samples = this.pending.slice(),
-      version = this.version;
+    const attempt = structuredClone(this.view.attempt);
+    const samples = this.pending.slice();
+    const version = this.version;
     this.view.save = "saving";
     this.emit();
     this.saving = this.repository
@@ -121,13 +141,14 @@ export class AnnotationSession {
     await this.saving;
     if (this.version !== this.savedVersion) await this.flush();
   }
+
   attach(media: HTMLMediaElement) {
     this.detach?.();
     this.media = media;
     const events: [string, EventListener][] = [];
-    const on = (name: string, fn: () => void) => {
-      media.addEventListener(name, fn);
-      events.push([name, fn]);
+    const on = (name: string, listener: () => void) => {
+      media.addEventListener(name, listener);
+      events.push([name, listener]);
     };
     const ready = () => {
       if (
@@ -147,42 +168,65 @@ export class AnnotationSession {
       this.fail("媒体加载失败，请检查文件路径、格式和网络后重新加载"),
     );
     on("playing", () => {
-      if (this.disposed || !this.active()) return;
+      if (this.disposed) return;
       if (document.hidden) {
-        this.pause("page_hidden");
+        this.releaseHold("page_hidden");
+        return;
+      }
+      if (this.view.dimension === null) {
+        this.view.phase = "familiarizing";
+        this.emit();
+        return;
+      }
+      if (!this.holding || !this.activeAttempt()) {
+        media.pause();
         return;
       }
       this.view.attempt!.status = "recording";
-      this.view.phase =
-        this.view.attempt!.mode === "annotation" ? "recording" : "preview";
-      this.event("playing");
+      this.view.phase = "recording";
+      this.event("sampling_started");
       this.sampler.start();
       this.emit();
       this.persist();
     });
     on("waiting", () => {
-      if (!this.active()) return;
-      this.sampler.stop();
-      this.view.phase = "buffering";
-      this.event("buffering");
+      if (this.view.dimension === null) {
+        this.view.phase = "buffering";
+      } else if (this.activeAttempt()) {
+        this.sampler.stop();
+        this.view.phase = "buffering";
+        this.event("buffering");
+        this.persist();
+      }
       this.emit();
-      this.persist();
     });
     on("pause", () => {
-      if (!this.active() || media.ended || this.view.phase === "starting")
-        return;
+      if (!this.activeAttempt() || media.ended) return;
       this.sampler.stop();
       this.view.attempt!.status = "paused";
-      this.view.phase = "paused";
-      this.event("pause");
+      if (this.view.phase !== "hold-delay") this.view.phase = "paused";
       this.emit();
-      this.persist();
     });
     on("ended", () => {
-      if (!this.active()) return;
+      if (this.view.dimension === null) {
+        this.familiarizationLoops++;
+        this.view.familiarizationPlays =
+          this.familiarizationBase + this.familiarizationLoops;
+        this.view.time = media.duration;
+        this.emit();
+        if (!this.disposed) {
+          media.currentTime = 0;
+          void media.play().catch(() => {
+            this.view.phase = "ready";
+            this.emit();
+          });
+        }
+        return;
+      }
+      if (!this.activeAttempt()) return;
+      this.sampler.capture(true);
       this.sampler.stop();
-      if (this.view.attempt!.mode === "annotation" && this.view.point)
-        this.record(media.currentTime, this.view.point);
+      this.holding = false;
       this.event("ended");
       this.view.attempt!.status = "completed";
       this.view.attempt!.completed_at = new Date().toISOString();
@@ -195,14 +239,15 @@ export class AnnotationSession {
     });
     on("seeking", () => {
       this.sampler.stop();
-      if (this.active() && this.view.phase !== "starting") {
+      if (this.internalSeek) return;
+      if (this.activeAttempt()) {
         this.interrupt("unexpected_seek");
         this.view.error = "本轮发生跳转，已保留为中断轮次，请重新标注";
         this.emit();
       }
     });
     const visibility = () => {
-      if (document.hidden && this.active()) this.pause("page_hidden");
+      if (document.hidden) this.releaseHold("page_hidden");
     };
     document.addEventListener("visibilitychange", visibility);
     const pagehide = () => {
@@ -212,7 +257,7 @@ export class AnnotationSession {
     window.addEventListener("pagehide", pagehide);
     const beforeunload = (event: BeforeUnloadEvent) => {
       if (
-        this.active() ||
+        this.activeAttempt() ||
         this.view.save === "error" ||
         this.view.save === "saving"
       ) {
@@ -222,13 +267,20 @@ export class AnnotationSession {
     };
     window.addEventListener("beforeunload", beforeunload);
     const clock = setInterval(() => {
-      if (this.active()) {
-        this.view.time = media.currentTime;
-        this.emit();
+      if (!this.media) return;
+      this.view.time = this.media.currentTime;
+      if (this.view.dimension === null && this.view.duration > 0) {
+        this.view.familiarizationPlays =
+          this.familiarizationBase +
+          this.familiarizationLoops +
+          Math.min(1, this.media.currentTime / this.view.duration);
       }
+      this.emit();
     }, 100);
     this.detach = () => {
-      events.forEach(([name, fn]) => media.removeEventListener(name, fn));
+      events.forEach(([name, listener]) =>
+        media.removeEventListener(name, listener),
+      );
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("pagehide", pagehide);
       window.removeEventListener("beforeunload", beforeunload);
@@ -236,152 +288,252 @@ export class AnnotationSession {
     };
     if (media.readyState >= 1) ready();
   }
-  setPoint(point: Point) {
-    this.view.point = point;
+
+  private async seekToStart() {
+    const media = this.media;
+    if (!media || media.currentTime === 0) return;
+    this.internalSeek = true;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error("播放器归零超时，请重新加载"));
+        }, 5000);
+        const finish = () => {
+          cleanup();
+          resolve();
+        };
+        const cleanup = () => {
+          clearTimeout(timer);
+          media.removeEventListener("seeked", finish);
+        };
+        media.addEventListener("seeked", finish, { once: true });
+        media.currentTime = 0;
+      });
+    } finally {
+      this.internalSeek = false;
+    }
+  }
+
+  async startFamiliarization(): Promise<boolean> {
+    if (!this.media || this.disposed || this.view.phase === "error")
+      return false;
+    this.cancelHoldDelay();
+    this.sampler.stop();
+    this.media.pause();
+    this.view.dimension = null;
+    this.view.attempt = null;
+    this.view.value = null;
+    this.view.rate = FAMILIARIZATION_RATE;
+    this.view.error = null;
+    this.familiarizationBase = this.view.familiarizationPlays;
+    this.familiarizationLoops = 0;
+    await this.seekToStart();
+    this.media.playbackRate = this.view.rate;
+    try {
+      await this.media.play();
+      return true;
+    } catch {
+      this.view.phase = "ready";
+      this.emit();
+      return false;
+    }
+  }
+
+  async toggleFamiliarization(): Promise<boolean> {
+    if (!this.media || this.view.dimension !== null) return false;
+    if (!this.media.paused) {
+      this.media.pause();
+      this.view.phase = "ready";
+      this.emit();
+      return false;
+    }
+    try {
+      await this.media.play();
+      return true;
+    } catch {
+      this.view.phase = "ready";
+      this.emit();
+      return false;
+    }
+  }
+
+  seekFamiliarization(time: number) {
+    if (!this.media || this.view.dimension !== null) return;
+    this.media.currentTime = Math.max(0, Math.min(time, this.view.duration));
+    this.view.time = this.media.currentTime;
     this.emit();
   }
-  private record(time: number, point: Point) {
+
+  async finishFamiliarization(): Promise<number> {
+    if (!this.media) return this.view.familiarizationPlays;
+    const plays =
+      this.familiarizationBase +
+      this.familiarizationLoops +
+      Math.min(1, this.media.currentTime / Math.max(this.view.duration, 1));
+    this.view.familiarizationPlays = plays;
+    this.media.pause();
+    await this.seekToStart();
+    this.view.time = 0;
+    this.view.phase = "ready";
+    this.emit();
+    return plays;
+  }
+
+  async prepareDimension(dimension: Dimension, familiarizationPlays: number) {
+    this.interrupt("dimension_changed");
+    await this.flush();
+    this.view.attempt = null;
+    this.pending = [];
+    this.view.dimension = dimension;
+    this.view.value = null;
+    this.view.rate = this.preferredRate;
+    if (this.media) this.media.playbackRate = this.preferredRate;
+    this.view.familiarizationPlays = familiarizationPlays;
+    this.view.error = null;
+    await this.seekToStart();
+    this.view.time = 0;
+    this.view.phase = "ready";
+    this.emit();
+  }
+
+  setValue(value: number) {
+    this.view.value = Math.max(-1, Math.min(1, value));
+    this.emit();
+  }
+
+  press(value: number) {
+    if (
+      !this.media ||
+      !this.view.dimension ||
+      ["loading", "starting", "error", "completed"].includes(this.view.phase)
+    )
+      return;
+    this.setValue(value);
+    this.holding = true;
+    this.sampler.stop();
+    this.media.pause();
+    this.cancelHoldDelay();
+    this.holding = true;
+    this.view.phase = "hold-delay";
+    this.emit();
+    this.holdTimer = setTimeout(
+      () => void this.beginSampling(),
+      HOLD_START_DELAY_MS,
+    );
+  }
+
+  private async beginSampling() {
+    this.holdTimer = null;
+    if (!this.holding || !this.media || !this.view.dimension) return;
+    if (!this.activeAttempt()) this.createAttempt(this.view.dimension);
+    this.media.playbackRate = this.view.rate;
+    try {
+      await this.media.play();
+    } catch {
+      this.releaseHold("play_failed");
+      this.fail("播放失败，请重新标注或重新加载材料");
+    }
+  }
+
+  private createAttempt(dimension: Dimension) {
+    const now = new Date().toISOString();
+    this.view.attempt = {
+      schema_version: 1,
+      attempt_id: crypto.randomUUID(),
+      task_id: this.task.task_id,
+      annotator_id: this.annotator,
+      media_id: this.task.media_id,
+      modality: this.task.modality,
+      mode: "annotation",
+      dimension,
+      familiarization_plays: this.view.familiarizationPlays,
+      status: "paused",
+      task_snapshot: { ...this.task },
+      sample_rate_hz: SAMPLE_RATE_HZ,
+      started_at: now,
+      completed_at: null,
+      sample_count: 0,
+      last_media_time: 0,
+      events: [],
+      calibration: null,
+    };
+    this.pending = [];
+    this.version++;
+    this.sampler.reset();
+    this.event("attempt_created");
+  }
+
+  releaseHold(reason = "pointer_released") {
+    const wasDelaying = this.view.phase === "hold-delay";
+    this.holding = false;
+    this.cancelHoldDelay();
+    this.sampler.stop();
+    this.media?.pause();
+    if (this.activeAttempt()) {
+      this.view.attempt!.status = "paused";
+      this.view.phase = "paused";
+      this.event(reason);
+      this.persist();
+    } else if (wasDelaying) {
+      this.view.phase = "ready";
+    }
+    this.emit();
+  }
+
+  private cancelHoldDelay() {
+    if (this.holdTimer) clearTimeout(this.holdTimer);
+    this.holdTimer = null;
+  }
+
+  private record(time: number, value: number) {
     const attempt = this.view.attempt;
     if (
       !attempt ||
-      attempt.mode !== "annotation" ||
       (attempt.sample_count > 0 && time <= attempt.last_media_time)
     )
       return;
-    this.pending.push(makeSample(attempt, time, point));
+    this.pending.push(makeSample(attempt, time, value));
     attempt.sample_count++;
     attempt.last_media_time = time;
     this.version++;
     this.emit();
     if (attempt.sample_count % SAMPLE_RATE_HZ === 0) this.persist();
   }
-  async start(mode: "preview" | "annotation", point?: Point) {
-    const media = this.media;
-    if (
-      !media ||
-      this.disposed ||
-      ["loading", "starting", "error"].includes(this.view.phase)
-    )
-      return;
-    if (
-      mode === "annotation" &&
-      this.active() &&
-      this.view.attempt!.mode === "annotation"
-    )
-      return;
-    this.interrupt("replaced_by_new_attempt");
-    this.view.phase = "starting";
-    this.view.error = null;
-    if (point) this.view.point = point;
-    this.emit();
-    try {
-      await this.flush();
-      if (this.disposed) return;
-      if (media.currentTime !== 0) {
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => {
-            cleanup();
-            reject(new Error("播放器归零超时，请重新加载"));
-          }, 5000);
-          const finish = () => {
-            cleanup();
-            resolve();
-          };
-          const cleanup = () => {
-            clearTimeout(timer);
-            media.removeEventListener("seeked", finish);
-          };
-          media.addEventListener("seeked", finish, { once: true });
-          media.currentTime = 0;
-        });
-      }
-      const now = new Date().toISOString();
-      this.view.attempt = {
-        schema_version: 1,
-        attempt_id: crypto.randomUUID(),
-        task_id: this.task.task_id,
-        annotator_id: this.annotator,
-        media_id: this.task.media_id,
-        modality: this.task.modality,
-        mode,
-        status: "recording",
-        task_snapshot: { ...this.task },
-        sample_rate_hz: SAMPLE_RATE_HZ,
-        started_at: now,
-        completed_at: null,
-        sample_count: 0,
-        last_media_time: 0,
-        events: [],
-        calibration: null,
-      };
-      this.pending = [];
-      this.version++;
-      this.sampler.reset();
-      this.view.time = media.currentTime;
-      this.event("start");
-      if (mode === "annotation" && this.view.point)
-        this.record(media.currentTime, this.view.point);
-      media.playbackRate = this.view.rate;
-      await media.play();
-      this.persist();
-      this.emit();
-    } catch (error) {
-      this.fail(error instanceof Error ? error.message : "无法开始播放");
-    }
-  }
-  pause(reason = "user_pause") {
-    if (!this.media || !this.active()) return;
-    this.sampler.stop();
-    this.media.pause();
-    this.view.attempt!.status = "paused";
-    this.view.phase = "paused";
-    this.event(reason);
-    this.emit();
-    this.persist();
-  }
-  async resume() {
-    if (
-      !this.media ||
-      !this.active() ||
-      !["paused", "buffering"].includes(this.view.phase)
-    )
-      return;
-    try {
-      await this.media.play();
-    } catch {
-      this.fail("播放失败，请重新标注或重新加载材料");
-    }
-  }
+
   setRate(rate: number) {
     this.view.rate = rate;
-    rememberRate(rate);
+    if (this.view.dimension !== null) {
+      this.preferredRate = rate;
+      rememberAnnotationRate(rate);
+    }
     if (this.media) this.media.playbackRate = rate;
-    if (this.active()) {
+    if (this.activeAttempt()) {
       this.event("rate_change");
       this.persist();
     }
     this.emit();
   }
+
   interrupt(reason = "interrupted") {
+    this.holding = false;
+    this.cancelHoldDelay();
     this.sampler.stop();
-    if (this.active()) {
+    if (this.activeAttempt()) {
       this.event(reason);
       this.view.attempt!.status = "interrupted";
       this.version++;
     }
     this.media?.pause();
   }
-  async reset() {
-    this.interrupt("restart");
-    await this.flush();
-    this.view.attempt = null;
-    this.view.point = null;
-    this.view.phase = "ready";
-    this.view.error = null;
-    if (this.media) this.media.currentTime = 0;
-    this.view.time = 0;
-    this.emit();
+
+  async resetDimension() {
+    const dimension = this.view.dimension;
+    const plays = this.view.familiarizationPlays;
+    if (!dimension) return;
+    await this.prepareDimension(dimension, plays);
   }
+
   fail(message: string) {
     this.interrupt("media_error");
     this.view.phase = "error";
@@ -389,6 +541,7 @@ export class AnnotationSession {
     this.emit();
     this.persist();
   }
+
   async exportData(): Promise<ExportData> {
     let unsaved = false;
     try {
@@ -399,13 +552,20 @@ export class AnnotationSession {
     const data = await this.repository.export(this.annotator);
     if (unsaved && this.view.attempt) {
       const id = this.view.attempt.attempt_id;
-      const persisted = data.attempts.find((a) => a.attempt_id === id);
+      const persisted = data.attempts.find(
+        (attempt) => attempt.attempt_id === id,
+      );
       const samples = new Map(
-        (persisted?.samples ?? []).map((s) => [s.sample_index, s]),
+        (persisted?.samples ?? []).map((sample) => [
+          sample.sample_index,
+          sample,
+        ]),
       );
       for (const sample of this.pending)
         samples.set(sample.sample_index, sample);
-      data.attempts = data.attempts.filter((a) => a.attempt_id !== id);
+      data.attempts = data.attempts.filter(
+        (attempt) => attempt.attempt_id !== id,
+      );
       data.attempts.push({
         ...structuredClone(this.view.attempt),
         samples: [...samples.values()].sort(
@@ -416,12 +576,14 @@ export class AnnotationSession {
     }
     return data;
   }
+
   async leave() {
     if (this.view.phase === "starting")
-      throw new Error("播放器正在开始，请稍后再切换样本");
+      throw new Error("播放器正在开始，请稍后再切换任务");
     this.interrupt("task_left");
     await this.flush();
   }
+
   dispose() {
     this.disposed = true;
     this.interrupt("view_closed");

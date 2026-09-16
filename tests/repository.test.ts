@@ -2,19 +2,35 @@ import "fake-indexeddb/auto";
 import { describe, expect, it } from "vitest";
 import { IndexedDbRepository } from "../src/storage/indexedDbRepository";
 import { makeSample } from "../src/core/sampler";
-import type { Attempt, Task } from "../src/types";
-import tasks from "../public/tasks.json";
-function fixture(): Attempt {
+import type { Attempt, Dimension, Task } from "../src/types";
+
+const task: Task = {
+  task_id: "source::face",
+  annotator_id: undefined,
+  media_id: "source-face",
+  display_id: "S0001",
+  modality: "face",
+  src: "/media/example/visual.mp4",
+  duration: 1.95,
+  target: "目标人物",
+  demo: true,
+  timeline_origin: 0,
+  order_index: 0,
+} as Task;
+
+function fixture(dimension: Dimension = "valence"): Attempt {
   return {
     schema_version: 1,
     attempt_id: crypto.randomUUID(),
-    task_id: "DEMO-001",
+    task_id: task.task_id,
     annotator_id: "A001",
-    media_id: "demo-visual",
-    modality: "visual",
+    media_id: task.media_id,
+    modality: task.modality,
     mode: "annotation",
+    dimension,
+    familiarization_plays: 1.3,
     status: "completed",
-    task_snapshot: tasks[0] as Task,
+    task_snapshot: task,
     sample_rate_hz: 10,
     started_at: new Date().toISOString(),
     completed_at: new Date().toISOString(),
@@ -24,82 +40,80 @@ function fixture(): Attempt {
     calibration: null,
   };
 }
+
 const repo = () => new IndexedDbRepository("test-" + crypto.randomUUID());
-describe("本地持久化与提交版本", () => {
-  it("草稿可重新读取，重复保存去重且拒绝篡改历史原始样本", async () => {
-    const db = repo(),
-      attempt = fixture(),
-      sample = makeSample({ ...attempt, sample_count: 0 }, 0, {
-        valence: 0.2,
-        arousal: 0.4,
-      });
+
+describe("V3 本地持久化与分维版本", () => {
+  it("草稿可读，重复保存去重且拒绝篡改单值原始样本", async () => {
+    const db = repo();
+    const attempt = fixture();
+    const sample = makeSample({ ...attempt, sample_count: 0 }, 0, 0.2);
     await db.checkpoint(attempt, [sample]);
     await db.checkpoint(attempt, [sample]);
     expect((await db.export("A001")).attempts[0].samples).toEqual([sample]);
     await expect(
-      db.checkpoint(attempt, [{ ...sample, valence: 0.8 }]),
+      db.checkpoint(attempt, [{ ...sample, value: 0.8 }]),
     ).rejects.toThrow();
-    expect((await db.export("A001")).attempts[0].samples[0].valence).toBe(0.2);
+    expect((await db.export("A001")).attempts[0].samples[0].value).toBe(0.2);
   });
-  it("按轮次读回采样点，排好序且不串到别的轮次", async () => {
-    // 四模态曲线回看要按 attempt_id 取采样点，取错轮次就画成别人的曲线
-    const db = repo(),
-      a = fixture(),
-      b = fixture();
-    const make = (attempt: Attempt, i: number) =>
-      makeSample({ ...attempt, sample_count: i }, i * 0.1, {
-        valence: i / 10,
-        arousal: 0,
-      });
-    // sample_count 必须覆盖到最大的 sample_index，否则 checkpoint 会判定越界
-    await db.checkpoint({ ...a, sample_count: 3 }, [make(a, 2), make(a, 0)]);
-    await db.checkpoint({ ...b, sample_count: 1 }, [make(b, 0)]);
 
-    const read = await db.attemptSamples(a.attempt_id);
-    expect(read.map((s) => s.sample_index)).toEqual([0, 2]);
-    expect(read.every((s) => s.attempt_id === a.attempt_id)).toBe(true);
-    expect(await db.attemptSamples("没有这一轮")).toEqual([]);
+  it("按轮次读回采样点并隔离不同轮次", async () => {
+    const db = repo();
+    const a = fixture();
+    const b = fixture("arousal");
+    const sample = (attempt: Attempt, index: number) =>
+      makeSample({ ...attempt, sample_count: index }, index * 0.1, index / 10);
+    await db.checkpoint(
+      { ...a, sample_count: 3 },
+      [sample(a, 2), sample(a, 0)],
+    );
+    await db.checkpoint({ ...b, sample_count: 1 }, [sample(b, 0)]);
+    const rows = await db.attemptSamples(a.attempt_id);
+    expect(rows.map((row) => row.sample_index)).toEqual([0, 2]);
+    expect(rows.every((row) => row.attempt_id === a.attempt_id)).toBe(true);
+    expect(await db.attemptSamples("missing")).toEqual([]);
   });
-  it("首次 Submit、第二次 Update、重复点击及并发请求保留唯一版本", async () => {
-    const db = repo(),
-      first = fixture();
-    await db.checkpoint(first, [
-      makeSample({ ...first, sample_count: 0 }, 0, { valence: 0, arousal: 0 }),
+
+  it("两个维度各自维护版本链，重复提交仍幂等", async () => {
+    const db = repo();
+    const firstValence = fixture("valence");
+    await db.checkpoint(firstValence, [
+      makeSample({ ...firstValence, sample_count: 0 }, 0, 0),
     ]);
-    const [a, b] = await Promise.all([
-      db.submit(first.attempt_id),
-      db.submit(first.attempt_id),
+    const [first, duplicate] = await Promise.all([
+      db.submit(firstValence.attempt_id),
+      db.submit(firstValence.attempt_id),
     ]);
-    expect(a).toEqual(b);
-    expect(a.revision).toBe(1);
-    expect(a.updated_at).toBeNull();
-    const second = fixture();
-    await db.checkpoint(second, [
-      makeSample({ ...second, sample_count: 0 }, 0, {
-        valence: 0.5,
-        arousal: 0,
-      }),
+    expect(duplicate).toEqual(first);
+    expect(first.revision).toBe(1);
+
+    const arousal = fixture("arousal");
+    await db.checkpoint(arousal, [
+      makeSample({ ...arousal, sample_count: 0 }, 0, 0.4),
     ]);
-    const update = await db.submit(second.attempt_id);
+    const arousalSubmission = await db.submit(arousal.attempt_id);
+    expect(arousalSubmission.revision).toBe(1);
+    expect(arousalSubmission.previous_submission_id).toBeNull();
+
+    const secondValence = fixture("valence");
+    await db.checkpoint(secondValence, [
+      makeSample({ ...secondValence, sample_count: 0 }, 0, 0.5),
+    ]);
+    const update = await db.submit(secondValence.attempt_id);
     expect(update.revision).toBe(2);
-    expect(update.previous_submission_id).toBe(a.submission_id);
-    expect(update.submitted_at).toBe(a.submitted_at);
+    expect(update.previous_submission_id).toBe(first.submission_id);
+    expect(update.submitted_at).toBe(first.submitted_at);
     expect(update.updated_at).not.toBeNull();
-    const data = await db.export("A001");
-    expect(data.attempts).toHaveLength(2);
-    expect(data.submissions).toHaveLength(2);
-    expect(
-      data.attempts.find((x) => x.attempt_id === first.attempt_id)?.samples[0]
-        .valence,
-    ).toBe(0);
   });
-  it("恢复中断记录而非伪造完成，标注者读取相互区分", async () => {
-    const db = repo(),
-      attempt = {
-        ...fixture(),
-        status: "recording" as const,
-        completed_at: null,
-      };
+
+  it("恢复中断记录而不伪造完成", async () => {
+    const db = repo();
+    const attempt = {
+      ...fixture(),
+      status: "recording" as const,
+      completed_at: null,
+      sample_count: 0,
+    };
     await db.checkpoint(attempt, []);
     await db.recoverInterrupted("A001");
     expect((await db.listAttempts("A001"))[0].status).toBe("interrupted");
@@ -107,13 +121,11 @@ describe("本地持久化与提交版本", () => {
     expect(await db.listAttempts("A002")).toHaveLength(0);
     await expect(db.submit(attempt.attempt_id)).rejects.toThrow("只能提交");
   });
-  it("拒绝样本未完整保存的轮次与预览轮次", async () => {
-    const db = repo(),
-      attempt = fixture();
+
+  it("拒绝采样点尚未完整保存的轮次", async () => {
+    const db = repo();
+    const attempt = fixture();
     await db.checkpoint(attempt, []);
     await expect(db.submit(attempt.attempt_id)).rejects.toThrow("尚未完整");
-    const preview = { ...fixture(), mode: "preview" as const };
-    await db.checkpoint(preview, []);
-    await expect(db.submit(preview.attempt_id)).rejects.toThrow("只能提交");
   });
 });

@@ -14,6 +14,7 @@ const done = (tx: IDBTransaction) =>
   });
 export class IndexedDbRepository implements AnnotationRepository {
   private database: Promise<IDBDatabase>;
+  private submissions = new Map<string, Promise<Submission>>();
   constructor(name = "xmer-annotation-v1") {
     this.database = new Promise((resolve, reject) => {
       const req = indexedDB.open(name, 1);
@@ -117,69 +118,66 @@ export class IndexedDbRepository implements AnnotationRepository {
       }
     }
   }
-  async submit(attemptId: string): Promise<Submission> {
-    const db = await this.database;
-    const tx = db.transaction(
-        ["attempts", "submissions", "samples"],
-        "readwrite",
-      ),
-      completion = done(tx);
-    // Attach a rejection handler before validation so transaction failure never leaks.
-    void completion.catch(() => {});
-    try {
-      const attempt: Attempt | undefined = await request(
-        tx.objectStore("attempts").get(attemptId),
-      );
-      if (
-        !attempt ||
-        attempt.mode !== "annotation" ||
-        attempt.status !== "completed" ||
-        !attempt.sample_count
+  submit(attemptId: string): Promise<Submission> {
+    const running = this.submissions.get(attemptId);
+    if (running) return running;
+    const operation = this.submitOnce(attemptId).finally(() => {
+      this.submissions.delete(attemptId);
+    });
+    this.submissions.set(attemptId, operation);
+    return operation;
+  }
+
+  private async submitOnce(attemptId: string): Promise<Submission> {
+    const [attempts, submissions, samples] = await Promise.all([
+      this.readAll<Attempt>("attempts"),
+      this.readAll<Submission>("submissions"),
+      this.attemptSamples(attemptId),
+    ]);
+    const attempt = attempts.find((row) => row.attempt_id === attemptId);
+    if (
+      !attempt ||
+      attempt.mode !== "annotation" ||
+      attempt.status !== "completed" ||
+      !attempt.sample_count
+    )
+      throw new Error("只能提交完整的正式标注轮次");
+    if (samples.length !== attempt.sample_count)
+      throw new Error("采样数据尚未完整保存，请重试保存");
+    const existing = submissions.find(
+      (submission) => submission.attempt_id === attemptId,
+    );
+    if (existing) return existing;
+
+    const dimensionByAttempt = new Map(
+      attempts.map((row) => [row.attempt_id, row.dimension]),
+    );
+    const history = submissions
+      .filter(
+        (submission) =>
+          submission.annotator_id === attempt.annotator_id &&
+          submission.task_id === attempt.task_id &&
+          dimensionByAttempt.get(submission.attempt_id) === attempt.dimension,
       )
-        throw new Error("只能提交完整的正式标注轮次");
-      const count = await request(
-        tx.objectStore("samples").index("attempt").count(attemptId),
-      );
-      if (count !== attempt.sample_count)
-        throw new Error("采样数据尚未完整保存，请重试保存");
-      const store = tx.objectStore("submissions");
-      const existing: Submission | undefined = await request(
-        store.index("attempt").get(attemptId),
-      );
-      if (existing) {
-        await completion;
-        return existing;
-      }
-      const history = ((await request(store.getAll())) as Submission[])
-        .filter(
-          (s) =>
-            s.annotator_id === attempt.annotator_id &&
-            s.task_id === attempt.task_id,
-        )
-        .sort((a, b) => b.revision - a.revision);
-      const previous = history[0],
-        now = new Date().toISOString();
-      const result: Submission = {
-        submission_id: crypto.randomUUID(),
-        task_id: attempt.task_id,
-        annotator_id: attempt.annotator_id,
-        attempt_id: attemptId,
-        revision: (previous?.revision ?? 0) + 1,
-        previous_submission_id: previous?.submission_id ?? null,
-        submitted_at: previous?.submitted_at ?? now,
-        updated_at: previous ? now : null,
-      };
-      store.add(result);
-      await completion;
-      return result;
-    } catch (error) {
-      try {
-        tx.abort();
-      } catch {
-        /* Transaction may already have completed. */
-      }
-      throw error;
-    }
+      .sort((a, b) => b.revision - a.revision);
+    const previous = history[0];
+    const now = new Date().toISOString();
+    const result: Submission = {
+      submission_id: crypto.randomUUID(),
+      task_id: attempt.task_id,
+      annotator_id: attempt.annotator_id,
+      attempt_id: attemptId,
+      revision: (previous?.revision ?? 0) + 1,
+      previous_submission_id: previous?.submission_id ?? null,
+      submitted_at: previous?.submitted_at ?? now,
+      updated_at: previous ? now : null,
+    };
+    const db = await this.database;
+    const tx = db.transaction("submissions", "readwrite");
+    const completion = done(tx);
+    tx.objectStore("submissions").add(result);
+    await completion;
+    return result;
   }
   async export(annotator: string): Promise<ExportData> {
     const db = await this.database,

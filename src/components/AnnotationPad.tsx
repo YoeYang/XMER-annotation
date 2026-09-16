@@ -1,157 +1,215 @@
-import type { ReactNode } from "react";
-import { MousePointer2 } from "lucide-react";
-import type { Point, SessionView } from "../types";
-import { normalizePoint } from "../core/sampler";
+import { useRef } from "react";
+import { Frown, Smile, Moon, Zap, BookOpen } from "lucide-react";
+import { normalizeValue } from "../core/sampler";
+import type { Dimension, FlowPage, SessionView } from "../types";
+
 interface Props {
+  page: FlowPage;
   view: SessionView;
-  onStart: (point: Point) => void;
-  onMove: (point: Point) => void;
-  /** 保存 / 重新标注 / 导出。放在标题栏右侧，一次标注不必滚动到页面底部。 */
-  actions: ReactNode;
+  canAnnotate: boolean;
+  onPress: (value: number) => void;
+  onMove: (value: number) => void;
+  onRelease: () => void;
+  onGuide: () => void;
 }
-export default function AnnotationPad({
-  view,
-  onStart,
-  onMove,
-  actions,
-}: Props) {
-  const completedAnnotation =
-    view.phase === "completed" && view.attempt?.mode === "annotation";
-  const suspendedAnnotation =
-    ["paused", "buffering"].includes(view.phase) &&
-    view.attempt?.mode === "annotation";
-  const disabled =
-    ["loading", "starting", "error"].includes(view.phase) ||
-    completedAnnotation ||
-    suspendedAnnotation;
-  const canStart = view.phase === "ready" || view.attempt?.mode === "preview";
-  const position = view.point ?? { valence: 0, arousal: 0 };
+
+const labels: Record<Dimension, { title: string; low: string; high: string }> =
+  {
+    valence: { title: "效价 Valence", low: "负向 −1", high: "正向 +1" },
+    arousal: { title: "唤醒 Arousal", low: "冷静 −1", high: "激动 +1" },
+  };
+
+function HoldMouse({ pressed = true }: { pressed?: boolean }) {
   return (
-    <section
-      className="panel annotation-panel"
-      aria-labelledby="annotation-title"
-    >
-      <div className="panel-heading">
-        <div>
-          <span className="eyebrow">02 / ANNOTATE</span>
-          <h2 id="annotation-title">感知此刻的情绪</h2>
-        </div>
-        {actions}
+    <svg className="hold-mouse" viewBox="0 0 32 44" aria-hidden="true">
+      {pressed && (
+        <path d="M16 3C8 3 4 8 4 16v4h12Z" className="mouse-left-button" />
+      )}
+      <rect
+        x="4"
+        y="3"
+        width="24"
+        height="38"
+        rx="12"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+      />
+      <path
+        d="M16 3v17M4 20h24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+export default function AnnotationPad({
+  page,
+  view,
+  canAnnotate,
+  onPress,
+  onMove,
+  onRelease,
+  onGuide,
+}: Props) {
+  const pointer = useRef<number | null>(null);
+  const activeDimension = page === "familiarization" ? null : page;
+  const valueAt = (clientX: number, element: HTMLElement) => {
+    const box = element.getBoundingClientRect();
+    return normalizeValue(clientX - box.left, box.width);
+  };
+
+  const heading = (
+    <div className="dimension-heading">
+      <h2 id="dimension-title">
+        {activeDimension ? labels[activeDimension].title : "先熟悉"}
+      </h2>
+      <button className="annotation-guide" onClick={onGuide}>
+        <BookOpen size={18} />
+        标注指南
+      </button>
+    </div>
+  );
+  if (!activeDimension) {
+    return (
+      <section
+        className="v3-step-panel familiarization-copy"
+        aria-label="熟悉材料"
+      >
+        {heading}
+        <p>看懂即可继续</p>
+      </section>
+    );
+  }
+
+  const sampling = view.phase === "recording";
+  const dimensions: Dimension[] = ["valence", "arousal"];
+  return (
+    <section className="v3-step-panel" aria-labelledby="dimension-title">
+      {heading}
+      <div
+        className={"sampling-strip " + (sampling ? "sampling" : "paused")}
+        role="status"
+      >
+        <span className="status-dot" />
+        {view.phase === "completed"
+          ? "已完成"
+          : sampling
+            ? "采样中…"
+            : view.phase === "hold-delay"
+              ? "准备中…"
+              : "暂停采样…"}
       </div>
-      <p className="panel-description">
-        根据目标人物当前的情感状态，连续移动光标。
-      </p>
-      <div className="pad-frame">
-        <div className="axis-arousal top">
-          激动 <small>high arousal</small>
-        </div>
-        <div className="pad-row">
-          <div className="axis-valence left">
-            负面
-            <small>negative</small>
-          </div>
-          <div
-            className="pad"
-            role="button"
-          tabIndex={disabled ? -1 : 0}
-          aria-label="二维情绪标注区域"
-          aria-disabled={disabled}
-          onPointerDown={(event) => {
-            if (disabled || !canStart) return;
-            const box = event.currentTarget.getBoundingClientRect();
-            onStart(
-              normalizePoint(
-                event.clientX - box.left,
-                event.clientY - box.top,
-                box.width,
-                box.height,
-              ),
-            );
-          }}
-          onPointerMove={(event) => {
-            if (disabled || view.attempt?.mode !== "annotation") return;
-            const box = event.currentTarget.getBoundingClientRect();
-            onMove(
-              normalizePoint(
-                event.clientX - box.left,
-                event.clientY - box.top,
-                box.width,
-                box.height,
-              ),
-            );
-          }}
-          onKeyDown={(event) => {
-            if (disabled) return;
-            if ((event.key === "Enter" || event.key === " ") && canStart) {
-              event.preventDefault();
-              onStart(position);
-            }
-            const delta: Record<string, Point> = {
-              ArrowLeft: { valence: -0.05, arousal: 0 },
-              ArrowRight: { valence: 0.05, arousal: 0 },
-              ArrowUp: { valence: 0, arousal: 0.05 },
-              ArrowDown: { valence: 0, arousal: -0.05 },
-            };
-            if (delta[event.key]) {
-              event.preventDefault();
-              onMove({
-                valence: Math.max(
-                  -1,
-                  Math.min(1, position.valence + delta[event.key].valence),
-                ),
-                arousal: Math.max(
-                  -1,
-                  Math.min(1, position.arousal + delta[event.key].arousal),
-                ),
-              });
-            }
-          }}
-          >
-            <span className="cross horizontal" />
-            <span className="cross vertical" />
-            <span
-              className={"cursor-point " + (view.point ? "selected" : "")}
-              style={{
-                left: ((position.valence + 1) / 2) * 100 + "%",
-                top: ((1 - position.arousal) / 2) * 100 + "%",
-              }}
-            />
-            {canStart && !disabled && (
-              <span className="start-hint">
-                <MousePointer2 size={16} />
-                点击任意位置开始
-              </span>
-            )}
-          </div>
-          <div className="axis-valence right">
-            正面
-            <small>positive</small>
-          </div>
-        </div>
-        <div className="axis-arousal low">
-          平静 <small>low arousal</small>
-        </div>
+      <div className="dimension-bars">
+        {dimensions.map((dimension) => {
+          const active = dimension === activeDimension;
+          return (
+            <div
+              className={"dimension-row " + (active ? "active" : "inactive")}
+              data-dimension={dimension}
+              key={dimension}
+            >
+              <div className="dimension-label">{labels[dimension].title}</div>
+              <div className="bar-semantics">
+                <span>
+                  {dimension === "valence" ? (
+                    <Frown aria-hidden="true" />
+                  ) : (
+                    <Moon aria-hidden="true" />
+                  )}
+                  {labels[dimension].low}
+                </span>
+                <span>
+                  {labels[dimension].high}
+                  {dimension === "valence" ? (
+                    <Smile aria-hidden="true" />
+                  ) : (
+                    <Zap aria-hidden="true" />
+                  )}
+                </span>
+              </div>
+              <div
+                className="dimension-bar"
+                aria-label={
+                  active ? labels[dimension].title + "标注条" : undefined
+                }
+                aria-describedby={active ? "hold-hint" : undefined}
+                aria-disabled={!active || !canAnnotate}
+                onContextMenu={(event) => event.preventDefault()}
+                onPointerDown={(event) => {
+                  if (
+                    event.button !== 0 ||
+                    !active ||
+                    !canAnnotate ||
+                    pointer.current !== null
+                  )
+                    return;
+                  event.preventDefault();
+                  pointer.current = event.pointerId;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  onPress(valueAt(event.clientX, event.currentTarget));
+                }}
+                onPointerMove={(event) => {
+                  if (
+                    !active ||
+                    !canAnnotate ||
+                    pointer.current !== event.pointerId
+                  )
+                    return;
+                  onMove(valueAt(event.clientX, event.currentTarget));
+                }}
+                onPointerUp={(event) => {
+                  if (pointer.current !== event.pointerId) return;
+                  pointer.current = null;
+                  if (event.currentTarget.hasPointerCapture(event.pointerId))
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  onRelease();
+                }}
+                onLostPointerCapture={(event) => {
+                  if (pointer.current !== event.pointerId) return;
+                  pointer.current = null;
+                  onRelease();
+                }}
+                onPointerCancel={(event) => {
+                  if (pointer.current !== event.pointerId) return;
+                  pointer.current = null;
+                  onRelease();
+                }}
+              >
+                {active && (
+                  <span
+                    className={
+                      "bar-cursor " +
+                      (view.value === null ? "initial-cursor" : "")
+                    }
+                    style={{ left: (((view.value ?? 0) + 1) / 2) * 100 + "%" }}
+                    aria-hidden="true"
+                  >
+                    {view.value === null && <HoldMouse />}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
-      <div className="coordinate-values">
-        <div>
-          <span>
-            <i className="dot teal" />
-            Valence <small>效价</small>
+      <div className="bar-feedback">
+        <div id="hold-hint" className="mouse-hints">
+          <span className="hold-hint">
+            <HoldMouse />
+            任意位置按住
           </span>
-          <strong data-testid="valence">{position.valence.toFixed(2)}</strong>
-        </div>
-        <div>
-          <span>
-            <i className="dot amber" />
-            Arousal <small>唤醒度</small>
+          <span className="hold-hint">
+            <HoldMouse pressed={false} />
+            松开暂停
           </span>
-          <strong data-testid="arousal">{position.arousal.toFixed(2)}</strong>
         </div>
+        <output className="active-value" data-testid="dimension-value">
+          {view.value === null ? "" : view.value.toFixed(2)}
+        </output>
       </div>
-      <p className="pad-note">
-        <MousePointer2 size={14} />
-        无需按住鼠标；离开区域后保持最后位置。
-      </p>
     </section>
   );
 }

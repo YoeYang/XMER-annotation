@@ -6,12 +6,16 @@ export function validateTasks(input: unknown): Task[] {
   for (const task of input) {
     if (
       !task ||
-      !["visual", "audio", "text", "audiovisual"].includes(task.modality) ||
+      !["audio", "text", "face", "body", "audiovisual"].includes(
+        task.modality,
+      ) ||
       !["task_id", "media_id", "display_id", "src", "target"].every(
         (k) => typeof task[k] === "string" && task[k].trim(),
       ) ||
       typeof task.demo !== "boolean" ||
       task.timeline_origin !== 0 ||
+      !Number.isInteger(task.order_index) ||
+      task.order_index < 0 ||
       !Number.isFinite(task.duration) ||
       task.duration <= 0 ||
       ids.has(task.task_id)
