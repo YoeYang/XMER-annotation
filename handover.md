@@ -953,12 +953,14 @@ Yoe 那 80 个任务里有 9 个是 0.5×/0.75× 标的（20Hz / 13.6Hz），其
 | `03-R1-distillation-for-preliminary-exp` | 856M | **历史存档** | 前期蒸馏实验 |
 | `04-conflict-sampling` | 161M | 在用（选样） | 冲突样本筛选，产出标注池与锚点集 |
 | `05-annotation` | 45M | **在用（主项目）** | 标注平台本体，**唯一在 git 里的目录** |
-| `06-speaker-frames` | 181M | 在用（数据准备） | 说话人静帧 |
-| `07-text-alignment` | 2.8G | 在用（数据准备） | 词级强制对齐 |
-| `08-material-prep` | 8.1G | 在用（数据准备） | 四模态素材与转录稿 |
+| `06-speaker-frames` | 181M | **仅数据** | 静帧产物；代码已并入 `05-annotation/pipeline/` |
+| `07-text-alignment` | 2.8G | **仅数据** | 对齐产物与模型缓存；代码同上 |
+| `08-material-prep` | 8.1G | **仅数据** | 四模态素材；代码同上 |
 
-> ⚠️ **只有 `05-annotation` 有版本控制。** 04/06/07/08 的脚本只存在于 Roihu 的
-> scratch 上，没有任何备份。scratch 不是长期存储。
+> **2026-09-16 起 06/07/08 的代码已并入 `05-annotation/pipeline/`**，进了版本控制；
+> 这三个目录现在只剩数据。**`04-conflict-sampling` 的脚本仍未纳入版本控制**——
+> 它是选样与实验设计，不属于素材准备流水线，当初那套暂停的 Label Studio 平台
+> 用的也是同一个池子。
 
 ## `05-annotation/` —— 标注平台（GitHub 仓库）
 
@@ -1064,3 +1066,52 @@ Yoe 那 80 个任务里有 9 个是 0.5×/0.75× 标的（20Hz / 13.6Hz），其
 
 方案尚未拍板，三个选项（A1 同轮回拖 / A2 拆成 8 个任务 / A3 一个任务两个轮次）
 与各自代价见 2026-09-15 那一节的讨论；**我的建议是 A3**。
+
+## 2026-09-16 续 · 06/07/08 合并为 `pipeline/`
+
+Yoe 指出 06、07、08 其实都属于「准备播放素材」这一件事。**代码本身已经证明了这点**：
+07 和 08 都在 `sys.path.insert` 硬编码进 `06-speaker-frames/src` 拿共用模块，
+而 `08/src/build_tasks.py` 直接 `from app.assignments import clean_speaker_name`
+——它连标注平台的服务端代码都在 import。三个目录靠 **9 处写死的绝对路径**粘在一起。
+
+### 现在的结构
+
+```
+05-annotation/
+  src/ server/ tests/ scripts/ archive/     标注平台本身
+  pipeline/
+    datapaths.py                            代码与数据之间唯一的接缝
+    speaker-frames/  （原 06，含三步共用的 common.py / facelib.py）
+    text-alignment/  （原 07）
+    material-prep/   （原 08）
+```
+
+**代码进仓库，数据留原地。** `out/`、`models/`、`data/` 十几 GB 仍在 scratch 上，
+由 `datapaths.py` 按 `XMER_DATA_ROOT` 定位，换机器只需设这个环境变量。
+
+**没有抽 `common/` 出来**：17 个脚本依赖它，抽出来要改一大片 import，不值得。
+`04-conflict-sampling` 不并入——它是选样与实验设计，在平台之上游。
+
+### 踩到的坑：相对路径比绝对路径更隐蔽
+
+第一遍只扫了写死的 `/scratch/...`，改完自以为妥了。真正危险的是
+`ROOT = Path(__file__).parents[1]` 这类**相对定位**：代码一搬，它们就指向仓库内部，
+跑起来会把十几 GB 数据写进 git。这类共找出 **6 处**，另有 4 处 `open("out/pilot.jsonl")`
+式的裸相对路径，肉眼扫源码时全都漏掉了。
+
+**是「逐个真实 import 每个模块」这一步把它们全逼出来的**，共 8 个错误：
+3 个 `NameError`（用了没导入的 `sys` / `MEDIA_DIR` / `FRAMES_DIR`）、
+4 个 `FileNotFoundError`、
+2 个运算符优先级错误（`OUT_DIR / "x.json".read_text()` —— `/` 比方法调用后绑定，
+`.read_text()` 落到了字符串上）。**语法检查全过，但一跑就崩。**
+
+### 验证
+
+- 34 个模块逐个真实导入，**零错误**（中途还打出了对齐保真度 80/80 逐词一致，说明确实读到了真实数据）
+- 9 条数据路径逐条确认存在
+- `material-prep` 7 个测试 + `text-alignment` 10 个测试全过
+- 删除原目录代码后再跑一遍，全部依旧通过
+- 三个原目录体积分毫未变，数据一点没动
+
+`pipeline/README.md` 里写了三步做什么、怎么跑、两套 module 怎么选，
+以及两个环境坑（ffmpeg 有两个只有一个带 libx264；计算分区 x86 而 GPU 分区 ARM）。
