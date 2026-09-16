@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .assignments import replace_assignments, tasks_by_sample
+from .assignments import replace_assignments, tasks_by_sample_modality
 from .auth import get_session, hash_token, new_token
 from .export import build_export
 from .models import Annotator, Assignment, Attempt, AttemptFlag, Submission
@@ -214,7 +214,11 @@ def set_assignments(
     phase: str = Body(..., embed=True),
     queue: list[dict] = Body(..., embed=True),
 ) -> dict:
-    """整体替换某人某阶段的队列。queue 每项 {sample_id, is_anchor?}，顺序即队列顺序。"""
+    """整体替换某人某阶段的队列。
+
+    V3 起队列以**子任务**为单位，每项 `{sample_id, modality, is_anchor?}`，
+    顺序即队列顺序。样本粒度表达不了硬隔离——同一样本的各模态要分给不同的人。
+    """
     if session.get(Annotator, annotator_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "没有这个标注者。")
     if phase not in PHASES:
@@ -223,11 +227,14 @@ def set_assignments(
         session,
         annotator_id,
         phase,
-        [(item["sample_id"], bool(item.get("is_anchor"))) for item in queue],
-        tasks_by_sample(session),
+        [
+            (item["sample_id"], item["modality"], bool(item.get("is_anchor")))
+            for item in queue
+        ],
+        tasks_by_sample_modality(session),
     )
     session.commit()
-    return {"written": written, "missing_samples": missing}
+    return {"written": written, "missing_tasks": missing}
 
 
 @router.get("/attempts", dependencies=[Depends(require_admin)])

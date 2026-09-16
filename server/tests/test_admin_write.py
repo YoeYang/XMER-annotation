@@ -77,18 +77,43 @@ def test_write_endpoints_reject_annotator_tokens(client: TestClient, annotator, 
 # --------------------------------------------------------------- 分配
 
 
-def test_setting_a_queue_expands_samples_to_all_modalities(
+def test_queue_is_per_subtask_not_per_sample(
     client: TestClient, session: Session, annotator, task, second_task
 ):
-    """分配以样本为单位，落库时展开成该样本下的全部模态任务。"""
+    """V3 的队列一行一个子任务。只点名 face，就只写这一条——
+
+    样本粒度会把同一样本的所有模态发给同一个人，正是硬隔离要禁止的。
+    """
     body = client.put(
         "/api/admin/assignments/A001",
         headers=ADMIN,
-        json={"phase": "pilot", "queue": [{"sample_id": "meld_dia11_utt9"}]},
+        json={
+            "phase": "pilot",
+            "queue": [{"sample_id": "meld_dia11_utt9", "modality": "face"}],
+        },
     ).json()
-    assert body["written"] == 2  # 夹具里该样本有两个任务
+    assert body["written"] == 1
     rows = session.scalars(select(Assignment)).all()
-    assert {r.task_id for r in rows} == {"EXAMPLE-001", "EXAMPLE-002"}
+    assert {r.task_id for r in rows} == {"EXAMPLE-001"}
+
+
+def test_queue_can_mix_modalities_of_different_samples(
+    client: TestClient, session: Session, annotator, task, second_task
+):
+    body = client.put(
+        "/api/admin/assignments/A001",
+        headers=ADMIN,
+        json={
+            "phase": "pilot",
+            "queue": [
+                {"sample_id": "meld_dia11_utt9", "modality": "face"},
+                {"sample_id": "meld_dia11_utt9", "modality": "audio"},
+            ],
+        },
+    ).json()
+    assert body["written"] == 2
+    rows = sorted(session.scalars(select(Assignment)).all(), key=lambda r: r.order_index)
+    assert [r.task_id for r in rows] == ["EXAMPLE-001", "EXAMPLE-002"]
 
 
 def test_queue_order_is_preserved_and_anchors_marked(
@@ -99,7 +124,9 @@ def test_queue_order_is_preserved_and_anchors_marked(
         headers=ADMIN,
         json={
             "phase": "pilot",
-            "queue": [{"sample_id": "meld_dia11_utt9", "is_anchor": True}],
+            "queue": [
+                {"sample_id": "meld_dia11_utt9", "modality": "face", "is_anchor": True}
+            ],
         },
     )
     rows = session.scalars(select(Assignment)).all()
@@ -115,20 +142,30 @@ def test_setting_a_queue_replaces_rather_than_appends(
         client.put(
             "/api/admin/assignments/A001",
             headers=ADMIN,
-            json={"phase": "pilot", "queue": [{"sample_id": "meld_dia11_utt9"}]},
+            json={
+                "phase": "pilot",
+                "queue": [{"sample_id": "meld_dia11_utt9", "modality": "face"}],
+            },
         )
-    assert len(session.scalars(select(Assignment)).all()) == 2
+    assert len(session.scalars(select(Assignment)).all()) == 1
 
 
-def test_unknown_samples_are_reported_not_silently_dropped(
+def test_unknown_subtasks_are_reported_not_silently_dropped(
     client: TestClient, annotator, task
 ):
+    """悄悄少发几条的话，分析时才会发现某些样本缺模态——那时已经标完了。"""
     body = client.put(
         "/api/admin/assignments/A001",
         headers=ADMIN,
-        json={"phase": "pilot", "queue": [{"sample_id": "nope"}]},
+        json={
+            "phase": "pilot",
+            "queue": [
+                {"sample_id": "nope", "modality": "face"},
+                {"sample_id": "meld_dia11_utt9", "modality": "body"},
+            ],
+        },
     ).json()
-    assert body["missing_samples"] == ["nope"]
+    assert body["missing_tasks"] == ["nope::face", "meld_dia11_utt9::body"]
     assert body["written"] == 0
 
 

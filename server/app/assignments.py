@@ -1,7 +1,9 @@
 """分配的落库逻辑。
 
-CLI（`manage.py apply-plan`）与管理端 API 共用这里，避免两处各写一套
-"样本展开成四个模态任务"而慢慢跑偏。
+CLI（`manage.py apply-plan`）与管理端 API 共用这里，避免两处各写一套而慢慢跑偏。
+
+V3 起分配以**子任务**（样本 × 模态）为单位。V2 时是一行一个样本、落库时展开成
+该样本下的全部模态任务——那样同一样本的各模态必然归同一个人，正是硬隔离要禁止的。
 """
 
 import random
@@ -49,51 +51,58 @@ def assign_display_ids(session: Session, seed: int) -> list[tuple[str, str]]:
     return sorted((display_id, sid) for sid, display_id in existing.items())
 
 
-def tasks_by_sample(session: Session) -> dict[str, list[str]]:
-    """source_id → 该样本下全部任务，按 task_id 排序保证结果稳定。"""
-    grouped: dict[str, list[str]] = {}
-    for task_id, source_id in session.execute(select(Task.task_id, Task.source_id)):
-        grouped.setdefault(source_id, []).append(task_id)
-    for task_ids in grouped.values():
-        task_ids.sort()
-    return grouped
+def tasks_by_sample_modality(session: Session) -> dict[tuple[str, str], str]:
+    """(source_id, modality) → task_id。
+
+    V3 的分配以子任务为单位，要按「样本 + 模态」精确定位。
+    **不要靠拼 `f"{sample}::{modality}"` 猜 task_id**——那是在假设 id 的格式，
+    换个命名就悄悄全部对不上；从库里查才是唯一可靠的路。
+    """
+    return {
+        (source_id, modality): task_id
+        for task_id, source_id, modality in session.execute(
+            select(Task.task_id, Task.source_id, Task.modality)
+        )
+    }
 
 
 def replace_assignments(
     session: Session,
     annotator_id: str,
     phase: str,
-    queue: list[tuple[str, bool]],
-    grouped: dict[str, list[str]] | None = None,
+    queue: list[tuple[str, str, bool]],
+    index: dict[tuple[str, str], str] | None = None,
 ) -> tuple[int, list[str]]:
-    """用 `queue`（[(sample_id, is_anchor)]，顺序即队列顺序）整体替换某人某阶段的分配。
+    """用 `queue`（[(sample_id, modality, is_anchor)]，顺序即队列顺序）整体替换分配。
 
-    返回 (写入的任务数, 没有对应任务的样本)。整体替换而非增量合并：
+    V3 起队列以**子任务**为单位：一行一个 (样本, 模态)，而不是一行一个样本、
+    四个模态一起发。硬隔离要求同一样本的各模态分给不同的人，样本粒度表达不了。
+
+    返回 (写入的任务数, 没有对应任务的子任务)。整体替换而非增量合并：
     分配是一份完整计划，半新半旧的队列比错误的队列更难排查。
     """
-    grouped = tasks_by_sample(session) if grouped is None else grouped
+    index = tasks_by_sample_modality(session) if index is None else index
     session.execute(
         delete(Assignment).where(
             Assignment.annotator_id == annotator_id, Assignment.phase == phase
         )
     )
     written, missing = 0, []
-    for order_index, (sample_id, is_anchor) in enumerate(queue):
-        task_ids = grouped.get(sample_id)
-        if not task_ids:
-            missing.append(sample_id)
+    for order_index, (sample_id, modality, is_anchor) in enumerate(queue):
+        task_id = index.get((sample_id, modality))
+        if task_id is None:
+            missing.append(f"{sample_id}::{modality}")
             continue
-        for task_id in task_ids:
-            session.add(
-                Assignment(
-                    annotator_id=annotator_id,
-                    task_id=task_id,
-                    phase=phase,
-                    order_index=order_index,
-                    is_anchor=is_anchor,
-                )
+        session.add(
+            Assignment(
+                annotator_id=annotator_id,
+                task_id=task_id,
+                phase=phase,
+                order_index=order_index,
+                is_anchor=is_anchor,
             )
-            written += 1
+        )
+        written += 1
     return written, missing
 
 

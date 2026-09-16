@@ -20,10 +20,14 @@ from pathlib import Path
 
 from sqlalchemy import delete, func, select
 
-from app.allocation import build_plan
-from app.assignments import assign_display_ids, replace_assignments, tasks_by_sample
+from app.allocation import AllocationShortfall, audit, build_plan
+from app.assignments import (
+    assign_display_ids,
+    replace_assignments,
+    tasks_by_sample_modality,
+)
 from app.auth import hash_token, new_token
-from app.config import PHASES, load_settings
+from app.config import MODALITIES, PHASES, load_settings
 from app.db import create_all, create_db_engine, create_session_factory
 from app.models import (
     Annotator,
@@ -35,7 +39,7 @@ from app.models import (
     Task,
 )
 
-PLAN_FIELDS = ["annotator_id", "order_index", "sample_id", "is_anchor"]
+PLAN_FIELDS = ["annotator_id", "order_index", "sample_id", "modality", "is_anchor"]
 
 
 def read_sample_ids(path: Path) -> list[str]:
@@ -156,7 +160,14 @@ def cmd_plan(args):
     if not annotators:
         sys.exit(f"阶段 {args.phase} 下没有账号，请先跑 create-annotators")
 
-    rows = build_plan(pool, anchors, annotators, args.coverage, args.seed)
+    try:
+        rows = build_plan(
+            pool, anchors, annotators, list(MODALITIES),
+            coverage=args.coverage, seed=args.seed,
+            per_annotator=args.per_annotator, isolation=args.isolation,
+        )
+    except AllocationShortfall as exc:
+        sys.exit(f"排不出满足约束的计划：{exc}")
 
     out = Path(args.out)
     with out.open("w", encoding="utf-8", newline="") as handle:
@@ -168,17 +179,25 @@ def cmd_plan(args):
                     "annotator_id": row.annotator_id,
                     "order_index": row.order_index,
                     "sample_id": row.sample_id,
+                    "modality": row.modality,
                     "is_anchor": int(row.is_anchor),
                 }
             )
 
-    per_person = len(rows) / len(annotators)
+    report = audit(rows, list(MODALITIES))
     anchor_rows = sum(1 for r in rows if r.is_anchor)
     print(f"计划已写入 {out}")
     print(f"  标注者      {len(annotators)} 人")
-    print(f"  池子        {len(pool)}（其中锚点 {len(anchors)}）")
-    print(f"  每人样本    {per_person:.1f} 个 → 约 {per_person * 4:.0f} 个单模态任务")
-    print(f"  锚点占比    {anchor_rows / len(rows):.1%}，每个锚点由 {args.coverage} 人标注")
+    print(f"  池子        {len(pool)}（其中锚点 {len(anchors)}）× {len(MODALITIES)} 模态")
+    print(f"  子任务      {len(rows)} 条，每人 {report['load_min']}~{report['load_max']} 条")
+    print(f"  锚点占比    {anchor_rows / len(rows):.1%}，每个锚点每模态由 {args.coverage} 人标注")
+    print(f"  隔离        {args.isolation}"
+          + ("（同一人不重复见同一样本）" if args.isolation == "strict" else "（未启用）"))
+    if report["isolation_violations"]:
+        print(f"  ⚠ 隔离被破坏的标注者：{report['isolation_violations'][:5]}")
+    print("  每人各模态条数区间：")
+    for modality, (lo, hi) in report["modality_min_max"].items():
+        print(f"    {modality:12s} {lo}~{hi}")
     print("可直接用表格软件修改后，再跑 apply-plan 回填。")
 
 
@@ -187,20 +206,21 @@ def cmd_apply_plan(args):
         plan = list(csv.DictReader(handle))
 
     # 按标注者聚合，保持 CSV 里的 order_index 顺序
-    queues: dict[str, list[tuple[int, str, bool]]] = {}
+    queues: dict[str, list[tuple[int, str, str, bool]]] = {}
     for row in plan:
         queues.setdefault(row["annotator_id"], []).append(
-            (int(row["order_index"]), row["sample_id"], bool(int(row["is_anchor"])))
+            (int(row["order_index"]), row["sample_id"], row["modality"],
+             bool(int(row["is_anchor"])))
         )
 
     factory = session_factory()
     with factory() as session:
-        grouped = tasks_by_sample(session)
-        known = {r["sample_id"] for r in plan} & grouped.keys()
-        absent = {r["sample_id"] for r in plan} - known
+        index = tasks_by_sample_modality(session)
+        wanted = {(r["sample_id"], r["modality"]) for r in plan}
+        absent = wanted - index.keys()
         if absent and not args.allow_missing:
             sys.exit(
-                f"有 {len(absent)} 个样本在 tasks 表里没有对应任务，"
+                f"有 {len(absent)} 个子任务在 tasks 表里找不到，"
                 "请先导入素材，或加 --allow-missing 跳过"
             )
 
@@ -211,15 +231,16 @@ def cmd_apply_plan(args):
                 session,
                 annotator_id,
                 args.phase,
-                [(sample_id, is_anchor) for _, sample_id, is_anchor in rows],
-                grouped,
+                [(sample_id, modality, is_anchor)
+                 for _, sample_id, modality, is_anchor in rows],
+                index,
             )
             written += count
         session.commit()
 
     print(f"已写入 {written} 条分配（覆盖 {len(queues)} 位标注者的 {args.phase} 阶段）")
     if absent:
-        print(f"跳过 {len(absent)} 个尚无素材的样本")
+        print(f"跳过 {len(absent)} 个尚无素材的子任务")
 
 
 def cmd_seed_e2e(args):
@@ -241,12 +262,14 @@ def cmd_seed_e2e(args):
                                   display_name="端到端测试", phase="pilot"))
         session.commit()
 
-        grouped = tasks_by_sample(session)
-        source = args.sample or next(iter(sorted(grouped)), None)
+        index = tasks_by_sample_modality(session)
+        source = args.sample or next(
+            (sid for sid, _ in sorted(index)), None
+        )
         if source is None:
             sys.exit("tasks 表为空，先导入素材")
-        replace_assignments(session, args.annotator_id, "pilot",
-                            [(source, False)], grouped)
+        queue = [(sid, mod, False) for (sid, mod) in sorted(index) if sid == source]
+        replace_assignments(session, args.annotator_id, "pilot", queue, index)
         session.commit()
     print(token)
 
@@ -384,6 +407,14 @@ def main():
         "--coverage", type=int, default=2, help="每个锚点由几人标注，1 等于没有重叠"
     )
     plan.add_argument("--seed", type=int, default=20260911)
+    plan.add_argument(
+        "--per-annotator", type=int, default=0,
+        help="每人最多多少个子任务，0 表示不限。排不下会报错而不是悄悄截断。",
+    )
+    plan.add_argument(
+        "--isolation", choices=("strict", "off"), default="strict",
+        help="strict：同一人不重复见同一样本（V3 口径）；off：允许一人拿同一样本的多个模态。",
+    )
     plan.add_argument("--out", default="assignment_plan.csv")
     plan.set_defaults(func=cmd_plan)
 
