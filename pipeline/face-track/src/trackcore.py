@@ -78,8 +78,21 @@ LOW_DET_RATE = 0.50
 """落在 [MIN_DET_RATE, LOW_DET_RATE) 的标 low_confidence，供人工优先审核。
 黑屏过半虽然还能标，但值得先看一眼。"""
 
-MIN_MEAN_SIM = 0.363
-"""SFace 官方同人阈值。低于它说明整条跟错了人，不是「检不出」而是「认错」。"""
+ANCHOR_SIM = 0.363
+"""SFace 官方同人阈值。达到它的帧算一个**确认锚点**——这一帧确实是参考静帧上的人。"""
+
+ANCHOR_MIN = 5
+"""身份确认所需的锚点数。
+
+**不再用「平均相似度」判身份。** 身份模板取自 06 阶段那张静帧，来自原始视频的
+另一个时刻、另一种光照，而 visual.mp4 是重裁重编码过的，比对系统性吃亏：
+实测有样本对静帧的相似度中位只有 0.258，但对片内自己的脸是 0.776——
+同一个人，均值却被拉到同人阈值以下。拿均值判身份会把大量正确轨迹判死
+（20 条「跟错人」里 14 条其实是对的）。
+
+改判据为「整段里有没有 ANCHOR_MIN 帧明确认出过这个人」：只要确认过，
+低分帧就是角度光照难，不是认错人。
+""" 
 
 # ---- 可见性迟滞（防屏闪）----
 
@@ -187,6 +200,9 @@ def link_track(frames_cands, frame_h):
             "bbox": [float(v) for v in best["bbox"]],
             "det": float(best["det"]),
             "sim": float(best["sim"]),
+            # sim_ref 永远是「与参考静帧」的相似度，只用来数锚点。
+            # 第二遍里 sim 会取 max(静帧, 片内)，不能拿它数锚点——会自我强化。
+            "sim_ref": float(best.get("sim_ref", best["sim"])),
         }
         prev = track[i]["bbox"]
     return track
@@ -321,6 +337,7 @@ def evaluate(track, fps, frame_h):
     dets = [t for t in track if t is not None]
     det_rate = len(dets) / n if n else 0.0
     mean_sim = sum(t["sim"] for t in dets) / len(dets) if dets else 0.0
+    anchors = sum(1 for t in dets if t.get("sim_ref", t["sim"]) >= ANCHOR_SIM)
     heights = [t["bbox"][3] for t in dets]
     mean_h_ratio = (sum(heights) / len(heights) / frame_h) if heights and frame_h else 0.0
     gap_frames = max_gap(track)
@@ -328,8 +345,8 @@ def evaluate(track, fps, frame_h):
     reasons = []
     if det_rate < MIN_DET_RATE:
         reasons.append(f"det_rate={det_rate:.2f}<{MIN_DET_RATE}")
-    if mean_sim < MIN_MEAN_SIM:
-        reasons.append(f"mean_sim={mean_sim:.3f}<{MIN_MEAN_SIM}")
+    if anchors < ANCHOR_MIN:
+        reasons.append(f"anchors={anchors}<{ANCHOR_MIN}")
 
     if reasons:
         status = "drop"
@@ -346,6 +363,7 @@ def evaluate(track, fps, frame_h):
         "max_gap_seconds": round(gap_frames / fps, 3) if fps else 0.0,
         "det_rate": round(det_rate, 4),
         "mean_sim": round(mean_sim, 4),
+        "anchors": anchors,
         "mean_face_h_ratio": round(mean_h_ratio, 4),
     }
     return stats, status, reasons
@@ -405,7 +423,7 @@ def build(frames_cands, fps, frame_w, frame_h, margin=CROP_MARGIN):
     stats["flicker_cuts"] = len(_runs(visible, 0))
 
     # evaluate() 里按原始检出率判的那条作废，改用迟滞后的可见率；
-    # mean_sim 那条（跟错人）与可见性无关，原样保留
+    # 锚点那条（认没认出过这个人）与可见性无关，原样保留
     reasons = [r for r in reasons if not r.startswith("det_rate")]
     if vr < MIN_DET_RATE:
         reasons.append(f"visible={vr:.2f}<{MIN_DET_RATE}")

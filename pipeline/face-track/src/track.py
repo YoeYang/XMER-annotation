@@ -133,14 +133,24 @@ def process(sample_id):
         return "drop"
 
     h, w = frames[0].shape[:2]
+
+    # 第一遍：与参考静帧比。静帧来自原始视频的另一个时刻、另一种光照，
+    # 而 visual.mp4 重裁重编码过，相似度系统性偏低——实测有样本对静帧
+    # 中位只有 0.258，对片内自己的脸却是 0.776。所以这遍只用来找锚点。
     cands = []
+    embeds = []
     for frame in frames:
         faces = _faces(frame)
+        row = []
         for f in faces:
-            f["sim"] = float(np.dot(_embed(frame, f), tmpl))
+            e = _embed(frame, f)
+            f["sim"] = f["sim_ref"] = float(np.dot(e, tmpl))
             f.pop("_row", None)
+            row.append(e)
         cands.append(faces)
+        embeds.append(row)
 
+    cands = _second_pass(cands, embeds, h)
     crop, stats, status, reasons = tc.build(cands, fps, w, h)
     _write(out_path, sample_id, fps, len(frames), (w, h), crop, stats, status, reasons)
     return status
@@ -149,10 +159,44 @@ def process(sample_id):
 # 早期失败（视频缺失、静帧检不出脸）也要写出完整形状的 stats，
 # 否则下游读 face_present_ratio 之类会 KeyError——判级失败不等于字段可以少。
 EMPTY_STATS = {
-    "detected": 0, "face_present_ratio": 0.0, "face_inside_ratio": 0.0,
+    "detected": 0, "face_present_ratio": 0.0, "face_inside_ratio": 0.0, "anchors": 0,
     "max_gap_frames": 0, "max_gap_seconds": 0.0,
     "det_rate": 0.0, "mean_sim": 0.0, "mean_face_h_ratio": 0.0,
 }
+
+
+def _second_pass(cands, embeds, frame_h):
+    """用片内自己的脸当第二模板，把角度光照难的帧认回来。
+
+    模板只由**确认锚点**（对静帧相似度 >= ANCHOR_SIM）构成，不是由第一遍
+    接受的全部帧构成——后者用的是宽松的 0.25 门限，若第一遍跟错了人，
+    拿它建模板会自我强化那个错误。锚点不足就直接返回，不做第二遍。
+
+    `sim` 取两个模板的较大值（用于挑人与接受），`sim_ref` 始终保留对静帧的
+    那个值（用于数锚点），两者不能混。
+    """
+    import numpy as np
+    track = tc.link_track(cands, frame_h)
+    anchors = []
+    for i, t in enumerate(track):
+        if t is None or t["sim_ref"] < tc.ANCHOR_SIM:
+            continue
+        for f, e in zip(cands[i], embeds[i]):
+            if abs(f["bbox"][0] - t["bbox"][0]) < 1 and abs(f["bbox"][1] - t["bbox"][1]) < 1:
+                anchors.append(e)
+                break
+    if len(anchors) < tc.ANCHOR_MIN:
+        return cands
+
+    inner = np.mean(anchors, axis=0)
+    n = float(np.linalg.norm(inner))
+    if not n:
+        return cands
+    inner /= n
+    for row, erow in zip(cands, embeds):
+        for f, e in zip(row, erow):
+            f["sim"] = max(f["sim_ref"], float(np.dot(e, inner)))
+    return cands
 
 
 def _write(path, sample_id, fps, n_frames, wh, crop, stats, status, reasons):

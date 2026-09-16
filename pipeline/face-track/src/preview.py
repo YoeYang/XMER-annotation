@@ -29,8 +29,9 @@ def sheet(sample_id, out_dir):
 
     rec = json.loads((TRACKS / f"{sample_id}.json").read_text(encoding="utf-8"))
     crop = rec.get("crop")
-    if not crop:
-        return None
+    # 判死的样本可能一帧都没认出人脸（静帧本身就检不出）。这类照样要出图
+    # 供人工核对——不然最该看的 14 条反而看不到。
+    no_crop = not crop
 
     cap = cv2.VideoCapture(str(MEDIA_DIR / "out" / "media" / sample_id / "visual.mp4"))
     frames = []
@@ -45,10 +46,15 @@ def sheet(sample_id, out_dir):
 
     n = min(COLS, len(frames))
     idxs = [round(i * (len(frames) - 1) / max(1, n - 1)) for i in range(n)]
-    side = crop["side"]
+    side = crop["side"] if crop else 0
     top, bottom = [], []
     for i in idxs:
         fr = frames[i].copy()
+        if no_crop:
+            h, w = fr.shape[:2]
+            top.append(cv2.resize(fr, (int(THUMB * w / h), THUMB)))
+            bottom.append(np.zeros((THUMB, THUMB, 3), dtype="uint8"))
+            continue
         c = crop["frames"][min(i, len(crop["frames"]) - 1)]
         x0, y0 = int(c["cx"] - side / 2), int(c["cy"] - side / 2)
         x1, y1 = int(x0 + side), int(y0 + side)
@@ -79,7 +85,8 @@ def sheet(sample_id, out_dir):
     sheet_img = np.vstack([pad(row1), pad(row2)])
 
     st = rec["stats"]
-    label = (f'{sample_id}  [{rec["status"]}]  mode={crop["mode"]}  side={side:.0f}  '
+    mode = crop["mode"] if crop else "no-crop"
+    label = (f'{sample_id}  [{rec["status"]}]  mode={mode}  side={side:.0f}  '
              f'present={st["face_present_ratio"]:.0%} black={1-st["face_present_ratio"]:.0%}  '
              f'sim={st["mean_sim"]:.2f}  inside={st.get("face_inside_ratio",0):.0%}')
     bar = np.zeros((34, width, 3), dtype="uint8")

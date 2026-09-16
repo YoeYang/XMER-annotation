@@ -280,10 +280,37 @@ def test_ample_detection_is_ok():
     assert status == "ok"
 
 
-def test_wrong_identity_is_dropped():
-    """单帧都过了 SIM_ACCEPT，但均值低于同人阈值 → 跟错人，不是检不出。"""
-    _, _, status, reasons = run([[face(500, 300, sim=0.30)] for _ in range(40)])
-    assert status == "drop" and any("mean_sim" in r for r in reasons)
+def test_never_confirmed_identity_is_dropped():
+    """整段都过了 SIM_ACCEPT，却一帧都没达到同人阈值 → 从没认出过这个人。"""
+    _, stats, status, reasons = run([[face(500, 300, sim=0.30)] for _ in range(40)])
+    assert stats["anchors"] == 0
+    assert status == "drop" and any("anchors" in r for r in reasons)
+
+
+def test_a_few_confirmed_frames_rescue_the_track():
+    """只要有 5 帧明确认出，其余低分帧就算角度光照难，不判死。
+
+    这是本轮最重要的一条：身份模板取自另一段视频的静帧，相似度系统性偏低，
+    拿均值判身份会把 20 条「跟错人」里的 14 条正确轨迹误杀。
+    """
+    cands = [[face(500, 300, sim=0.30)] for _ in range(40)]
+    for i in range(5):
+        cands[i] = [face(500, 300, sim=0.80)]
+    _, stats, status, _ = run(cands)
+    assert stats["anchors"] == 5 and status == "ok"
+
+
+def test_anchor_count_uses_sim_ref_not_sim():
+    """第二遍把 sim 抬成 max(静帧, 片内)，锚点必须仍按对静帧的 sim_ref 数，
+    否则片内模板会自我强化第一遍的错误。"""
+    cands = []
+    for _ in range(40):
+        f = face(500, 300, sim=0.90)      # 第二遍抬高后的分数
+        f["sim_ref"] = 0.20               # 对参考静帧其实很低
+        cands.append([f])
+    _, stats, status, reasons = run(cands)
+    assert stats["anchors"] == 0
+    assert status == "drop" and any("anchors" in r for r in reasons)
 
 
 def test_empty_track_does_not_crash():

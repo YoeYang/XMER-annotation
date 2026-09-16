@@ -1,0 +1,25 @@
+「跟错人」判死共 20 条
+
+样本                                  p90    max  >=.363 结论
+chsims_aqgy3_0002_00007           0.392  0.835      18 锚点充足
+chsims_aqgy4_0009_00011           0.295  0.809      11 锚点充足
+chsims_aqgy4_0012_00032           0.336  0.732       8 锚点充足
+chsims_aqgy5_0028_00043           0.282  0.912       3 锚点不足
+iemocap_Ses02F_impro01_F005       0.364  0.430       8 锚点充足
+iemocap_Ses02F_impro01_F017       0.377  0.493      26 锚点充足
+iemocap_Ses02F_impro03_F021       0.284  0.448       9 锚点充足
+iemocap_Ses02M_script02_2_F010    0.337  0.459      23 锚点充足
+iemocap_Ses03F_script02_1_M042    0.334  0.566      15 锚点充足
+iemocap_Ses03F_script03_1_F027    0.421  0.457      60 锚点充足
+iemocap_Ses03F_script03_2_M021    0.441  0.559      61 锚点充足
+iemocap_Ses05F_impro03_M006       0.149  0.230       0 确实没认出过
+meld_dia274_utt0                  0.353  0.877      19 锚点充足
+meld_dia438_utt8                  0.386  0.608      14 锚点充足
+meld_dia445_utt8                  0.248  0.486       4 锚点不足
+meld_dia693_utt4                  0.371  0.730       7 锚点充足
+meld_dia949_utt6                  0.247  0.464       3 锚点不足
+meld_dia950_utt4                  0.318  0.829       9 锚点充足
+mosi_yDtzw_Y-7RU_7                0.124  0.166       0 确实没认出过
+mustard_1_6134                    0.291  0.400       3 锚点不足
+
+有 >=5 个确认锚点的: 14/20 —— 这些能靠片内模板救回来
