@@ -8,6 +8,15 @@ playwright-report/
 !.env.example
 *.log
 
+# Python 字节码（全仓库）
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# 素材流水线的数据与作业日志，数据留在 scratch 不入库
+pipeline/*/out/
+pipeline/*/logs/
+
 # 后端本地开发产物
 server/**/__pycache__/
 server/.pytest_cache/
