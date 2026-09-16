@@ -31,6 +31,7 @@ import argparse
 import json
 import subprocess
 import sys
+from fractions import Fraction
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -63,6 +64,16 @@ iemocap 会被上采样（源就那么糊，改不了），chsims 略微下采�
 """
 
 
+def exact_fps(fps):
+    """把 cv2 的浮点帧率还原成精确有理数，如 23.976023976… -> 24000/1001。
+
+    直接把浮点串给 ffmpeg，时基对不上，输出会比源多一帧或少一帧——
+    五路对齐时这一帧就是 0.04 秒的误差。
+    """
+    f = Fraction(fps).limit_denominator(100000)
+    return f"{f.numerator}/{f.denominator}"
+
+
 def render(sample_id, out_path, size=OUT_SIZE, crf=20):
     import cv2
     import numpy as np
@@ -80,7 +91,7 @@ def render(sample_id, out_path, size=OUT_SIZE, crf=20):
     proc = subprocess.Popen(
         [str(FFMPEG), "-hide_banner", "-loglevel", "error", "-y",
          "-f", "rawvideo", "-pix_fmt", "bgr24",
-         "-s", f"{size}x{size}", "-r", f"{fps}",
+         "-s", f"{size}x{size}", "-r", exact_fps(fps),
          "-i", "-", "-an",
          "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf),
          "-pix_fmt", "yuv420p", str(out_path)],
@@ -142,7 +153,7 @@ def render_body(sample_id, out_path, crf=20):
     proc = subprocess.Popen(
         [str(FFMPEG), "-hide_banner", "-loglevel", "error", "-y",
          "-f", "rawvideo", "-pix_fmt", "bgr24",
-         "-s", f"{w}x{h}", "-r", f"{fps}",
+         "-s", f"{w}x{h}", "-r", exact_fps(fps),
          "-i", "-", "-an",
          "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf),
          "-pix_fmt", "yuv420p", str(out_path)],
