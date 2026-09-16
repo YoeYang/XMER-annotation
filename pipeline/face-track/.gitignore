@@ -1,2 +1,5 @@
 out/
 logs/
+# 临时诊断/一次性作业脚本与 Slurm 输出，不入库
+.*.sbatch
+*.out
