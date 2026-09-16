@@ -1,41 +1,41 @@
 import type { Modality, Phase } from "./types";
 export const SAMPLE_RATE_HZ = 10;
-// 0.1 与 0.3 是标注者要求的：素材里情绪变得太快，常速跟不上手。
-// 采样按媒体时间定频，放慢不会改变曲线的时间分辨率，只是给人更多反应余地。
-export const PLAYBACK_RATES = [0.1, 0.3, 0.5, 0.75, 1, 1.25, 1.5];
-const RATE_KEY = "xmer.playback_rate";
-/**
- * 倍速跨任务、跨刷新保持。
- * 微表情细微的样本要放慢才标得动，而一个人一次要标几十个任务，
- * 每换一个就重选一次倍速太折腾。
- * 浏览器可能禁用存储（隐私模式），读写都得能失败。
- */
-export function rememberedRate(): number {
+export const HOLD_START_DELAY_MS = 500;
+// 采样按媒体时间定频，放慢不会改变曲线的时间分辨率。
+export const PLAYBACK_RATES = [0.1, 0.3, 0.5, 0.7, 1] as const;
+export const FAMILIARIZATION_RATE = 1;
+export const ANNOTATION_RATE = 0.5;
+const RATE_KEY = "xmer.annotation_rate";
+export function annotationRate(): number {
   try {
     const value = Number(localStorage.getItem(RATE_KEY));
-    return PLAYBACK_RATES.includes(value) ? value : 1;
+    return PLAYBACK_RATES.some((rate) => rate === value)
+      ? value
+      : ANNOTATION_RATE;
   } catch {
-    return 1;
+    return ANNOTATION_RATE;
   }
 }
-export function rememberRate(rate: number): void {
+export function rememberAnnotationRate(rate: number) {
   try {
     localStorage.setItem(RATE_KEY, String(rate));
   } catch {
-    // 存不下就只在本次会话里生效，不该因此中断标注
+    // 禁用浏览器存储时，当前会话的选择仍由 session 保留。
   }
 }
 export const MODALITY_LABELS: Record<Modality, string> = {
-  visual: "仅视觉",
   audio: "仅音频",
   text: "仅文本",
+  face: "面部",
+  body: "身体",
   audiovisual: "完整视频",
 };
 export const PHASE_LABELS: Record<Phase, string> = {
   loading: "加载材料中",
   ready: "等待开始",
   starting: "正在开始",
-  preview: "正在预览",
+  familiarizing: "正在熟悉",
+  "hold-delay": "准备采样",
   recording: "正在采样",
   paused: "已暂停",
   buffering: "正在缓冲",

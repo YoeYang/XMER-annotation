@@ -1,14 +1,8 @@
-import type { Attempt, Point, Sample } from "../types";
-export function normalizePoint(
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-): Point {
-  return {
-    valence: Math.max(-1, Math.min(1, (x / width) * 2 - 1)),
-    arousal: Math.max(-1, Math.min(1, 1 - (y / height) * 2)),
-  };
+import type { Attempt, Sample } from "../types";
+
+export function normalizeValue(x: number, width: number): number {
+  if (!Number.isFinite(x) || !Number.isFinite(width) || width <= 0) return 0;
+  return Math.max(-1, Math.min(1, (x / width) * 2 - 1));
 }
 /**
  * 按**媒体时间**定频采样：每 1/hz 秒的媒体时间记一个点，与播放倍速无关。
@@ -28,8 +22,8 @@ export class Sampler {
   private lastCell = -1;
   constructor(
     private hz: number,
-    private read: () => { time: number; point: Point; playing: boolean },
-    private record: (time: number, point: Point) => void,
+    private read: () => { time: number; value: number; playing: boolean },
+    private record: (time: number, value: number) => void,
   ) {
     if (!Number.isFinite(hz) || hz <= 0) throw new Error("采样频率必须为正数");
   }
@@ -37,13 +31,13 @@ export class Sampler {
     this.stop();
     this.lastCell = -1;
   }
-  capture() {
-    const { time, point, playing } = this.read();
-    if (!playing || !Number.isFinite(time) || time < 0) return;
+  capture(force = false) {
+    const { time, value, playing } = this.read();
+    if ((!playing && !force) || !Number.isFinite(time) || time < 0) return;
     const cell = Math.floor(time * this.hz);
     if (cell <= this.lastCell) return;
     this.lastCell = cell;
-    this.record(cell / this.hz, { ...point });
+    this.record(cell / this.hz, value);
   }
   start() {
     if (this.timer !== undefined) return;
@@ -61,7 +55,7 @@ export class Sampler {
 export function makeSample(
   attempt: Attempt,
   time: number,
-  point: Point,
+  value: number,
 ): Sample {
   return {
     task_id: attempt.task_id,
@@ -72,7 +66,7 @@ export function makeSample(
     sample_index: attempt.sample_count,
     media_time: time,
     wall_time: new Date().toISOString(),
-    ...point,
+    value,
     is_valid: true,
   };
 }

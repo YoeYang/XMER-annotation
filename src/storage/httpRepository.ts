@@ -47,6 +47,8 @@ export class HttpRepository implements AnnotationRepository {
         media_id: attempt.media_id,
         modality: attempt.modality,
         mode: attempt.mode,
+        dimension: attempt.dimension,
+        familiarization_plays: attempt.familiarization_plays,
         status: attempt.status,
         task_snapshot: attempt.task_snapshot,
         events: attempt.events,

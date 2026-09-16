@@ -1,24 +1,19 @@
-import { useEffect, useState } from "react";
-import { ArrowRight, CloudUpload, Info, Save } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowLeft, ArrowRight, CornerDownLeft, RotateCcw } from "lucide-react";
 import { AnnotationSession } from "../core/session";
+import { dimensionSubmitted, latestAttempt } from "../core/taskFlow";
 import type { AnnotationRepository } from "../storage/repository";
 import type { SyncState } from "../storage/syncingRepository";
-import type { Attempt, Submission, Task } from "../types";
-import {
-  formatDate,
-  formatTime,
-  MODALITY_LABELS,
-  SAMPLE_RATE_HZ,
-} from "../config";
+import type { Attempt, Dimension, FlowPage, Submission, Task } from "../types";
+import { MODALITY_LABELS } from "../config";
 import AnnotationPad from "./AnnotationPad";
 import MediaPanel from "./MediaPanel";
-import AttemptPanel from "./AttemptPanel";
-import ResultActions from "./ResultActions";
+
 interface Props {
   task: Task;
   sync: SyncState | null;
-  index: number;
-  total: number;
+  position: number;
+  sectionTotal: number;
   annotator: string;
   repository: AnnotationRepository;
   attempts: Attempt[];
@@ -27,28 +22,51 @@ interface Props {
   register: (session: AnnotationSession | null) => void;
   onNext: () => void;
   onReload: () => void;
-  onExport: () => Promise<void>;
-  onRetrySync: () => void;
+  onGuide: () => void;
 }
+
 export default function Workspace(props: Props) {
   const { task, annotator, repository } = props;
+  const taskAttempts = useMemo(
+    () => props.attempts.filter((attempt) => attempt.task_id === task.task_id),
+    [props.attempts, task.task_id],
+  );
+  const taskSubmissions = useMemo(
+    () =>
+      props.submissions.filter(
+        (submission) => submission.task_id === task.task_id,
+      ),
+    [props.submissions, task.task_id],
+  );
+  const valenceSubmitted = dimensionSubmitted(
+    taskAttempts,
+    taskSubmissions,
+    task.task_id,
+    "valence",
+  );
+  const arousalSubmitted = dimensionSubmitted(
+    taskAttempts,
+    taskSubmissions,
+    task.task_id,
+    "arousal",
+  );
+  const initialPage: FlowPage = valenceSubmitted
+    ? "arousal"
+    : latestAttempt(taskAttempts, task.task_id, "valence")
+      ? "valence"
+      : "familiarization";
+  const initialPlays = taskAttempts.at(-1)?.familiarization_plays ?? 0;
   const [session] = useState(
     () => new AnnotationSession(task, annotator, repository),
   );
-  const [view, setView] = useState(session.view),
-    [selected, setSelected] = useState(""),
-    [preparingNew, setPreparingNew] = useState(false),
-    [busy, setBusy] = useState(false),
-    [notice, setNotice] = useState("");
-  const attempts = props.attempts.filter((a) => a.task_id === task.task_id),
-    submissions = props.submissions.filter((s) => s.task_id === task.task_id);
-  const current = preparingNew
-    ? null
-    : selected
-      ? (attempts.find((a) => a.attempt_id === selected) ?? null)
-      : view.attempt?.mode === "annotation"
-        ? view.attempt
-        : (attempts.filter((a) => a.mode === "annotation").at(-1) ?? null);
+  const [view, setView] = useState(session.view);
+  const [page, setPage] = useState<FlowPage>(initialPage);
+  const [familiarizationPlays, setFamiliarizationPlays] =
+    useState(initialPlays);
+  const [reannotating, setReannotating] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+
   useEffect(() => {
     props.register(session);
     const unsubscribe = session.subscribe(() => setView(session.view));
@@ -58,170 +76,218 @@ export default function Workspace(props: Props) {
       props.register(null);
     };
   }, [session]);
+
+  useEffect(() => {
+    if (initialPage !== "familiarization")
+      void session.prepareDimension(initialPage, initialPlays);
+  }, []);
+
   useEffect(() => {
     if (view.savedAt)
       void props.refresh().catch((error) => setNotice(String(error)));
   }, [view.savedAt]);
-  const action = async (fn: () => Promise<void>) => {
+
+  const run = async (operation: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);
     setNotice("");
     try {
-      await fn();
+      await operation();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "操作失败，请重试");
     } finally {
       setBusy(false);
     }
   };
-  const submit = () =>
-    void action(async () => {
-      if (!current) return;
-      await session.flush();
-      const result = await repository.submit(current.attempt_id);
-      await props.refresh();
-      setNotice(
-        result.revision === 1
-          ? "Submit 成功，结果已保存到本地。"
-          : "Update 成功，历史原始记录已保留。",
-      );
+
+  const dimension = page === "familiarization" ? null : page;
+  const storedAttempt = dimension
+    ? latestAttempt(taskAttempts, task.task_id, dimension)
+    : undefined;
+  const current =
+    view.attempt?.dimension === dimension ? view.attempt : storedAttempt;
+  const submitted =
+    dimension === "valence"
+      ? valenceSubmitted
+      : dimension === "arousal"
+        ? arousalSubmitted
+        : false;
+  const activeAttempt =
+    view.attempt?.dimension === dimension &&
+    ["recording", "paused"].includes(view.attempt.status);
+  const hasExisting = !!storedAttempt || submitted || !!view.attempt;
+  const canAnnotate =
+    !!dimension &&
+    !busy &&
+    (activeAttempt || reannotating || (!storedAttempt && !submitted)) &&
+    view.phase !== "completed";
+  const canRestart =
+    !!dimension &&
+    hasExisting &&
+    !["loading", "starting", "recording", "hold-delay", "buffering"].includes(
+      view.phase,
+    );
+  const canAdvance =
+    page === "familiarization" ||
+    (!reannotating && submitted) ||
+    ((reannotating ? view.attempt : current)?.status === "completed" &&
+      (reannotating ? view.attempt : current)!.sample_count > 0);
+
+  const goToDimension = async (next: Dimension) => {
+    setPage(next);
+    setReannotating(false);
+    await session.prepareDimension(next, familiarizationPlays);
+  };
+
+  const next = useCallback(() => {
+    if (busy || !canAdvance) return;
+    void run(async () => {
+      if (page === "familiarization") {
+        const plays = await session.finishFamiliarization();
+        setFamiliarizationPlays(plays);
+        setPage("valence");
+        setReannotating(false);
+        await session.prepareDimension("valence", plays);
+        return;
+      }
+      if (
+        current &&
+        !taskSubmissions.some(
+          (submission) => submission.attempt_id === current.attempt_id,
+        )
+      ) {
+        await session.flush();
+        await repository.submit(current.attempt_id);
+        await props.refresh();
+      }
+      if (page === "valence") {
+        await goToDimension("arousal");
+      } else {
+        props.onNext();
+      }
     });
-  const reset = () =>
-    void action(async () => {
-      await session.reset();
-      setSelected("");
-      setPreparingNew(true);
-      await props.refresh();
+  }, [
+    busy,
+    canAdvance,
+    page,
+    current?.attempt_id,
+    taskSubmissions,
+    familiarizationPlays,
+  ]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Enter" ||
+        event.repeat ||
+        event.isComposing ||
+        document.querySelector('[aria-modal="true"]') ||
+        ["SELECT", "INPUT", "TEXTAREA"].includes(
+          (event.target as HTMLElement | null)?.tagName ?? "",
+        )
+      )
+        return;
+      event.preventDefault();
+      next();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [next]);
+
+  const back = () =>
+    void run(async () => {
+      if (page === "arousal") {
+        await goToDimension("valence");
+        return;
+      }
+      if (page === "valence") {
+        await session.leave();
+        setPage("familiarization");
+        setReannotating(false);
+      }
     });
+
+  const restart = () =>
+    void run(async () => {
+      await session.resetDimension();
+      setReannotating(true);
+    });
+
   return (
-    <main className="workspace">
-      <div className="breadcrumb">
-        标注工作台 <span>/</span> 样本{" "}
-        {String(props.index + 1).padStart(2, "0")}
-      </div>
+    <main className="workspace v3-workspace">
       <div className="workspace-heading">
-        <div>
-          <div className="eyebrow">CONTINUOUS EMOTION ANNOTATION</div>
-          <h1>
-            {task.display_id} · {MODALITY_LABELS[task.modality]}
-          </h1>
-          <p>
-            {task.demo ? "演示任务 · 非实验素材" : "研究样本"}
-            <i />
-            {formatTime(task.duration)}
-          </p>
-        </div>
-        <div className="sample-counter">
-          <strong>{String(props.index + 1).padStart(2, "0")}</strong>
-          <span>/ {String(props.total).padStart(2, "0")}</span>
-        </div>
+        <h1>
+          {MODALITY_LABELS[task.modality]} {props.position}/{props.sectionTotal}
+        </h1>
       </div>
-      <div className="instruction-strip">
-        <Info size={17} />
-        <span>
-          先熟悉材料，再点击右侧方形开始标注。请判断
-          <strong>目标人物的情绪</strong>，而非自己的感受。
-        </span>
-        <span className="sampling-badge">{SAMPLE_RATE_HZ} Hz 连续采样</span>
-      </div>
+
       <div className="annotation-grid">
         <MediaPanel
           key={task.task_id}
           task={task}
+          page={page}
           session={session}
           view={view}
           onReload={props.onReload}
         />
-        <AnnotationPad
-          view={view}
-          onMove={(point) => session.setPoint(point)}
-          onStart={(point) => {
-            setSelected("");
-            setPreparingNew(false);
-            setNotice("");
-            void session.start("annotation", point);
-          }}
-          actions={
-            <ResultActions
-              current={current}
-              submissions={submissions}
-              view={view}
-              busy={busy}
-              onSubmit={submit}
-              onReset={reset}
-              onExport={() => void action(props.onExport)}
-            />
-          }
-        />
-      </div>
-      <div
-        className={
-          "save-line " +
-          (view.save === "error" || props.sync?.lastError ? "error-text" : "")
-        }
-        role="status"
-      >
-        {props.sync?.pending ? <CloudUpload size={14} /> : <Save size={14} />}
-        <span>
-          {view.save === "error"
-            ? "保存失败：" + view.saveError
-            : view.save === "saving"
-              ? "正在保存…"
-              : props.sync?.pending
-                ? "本地已保存，待上传 " + props.sync.pending + " 条"
-                : view.save === "saved"
-                  ? "已同步到服务器 · " + formatDate(view.savedAt)
-                  : "自动保存已就绪"}
-        </span>
-        {view.save === "error" && (
-          <button onClick={() => void action(() => session.flush())}>
-            重试保存
-          </button>
-        )}
-        {props.sync?.lastError && (
-          <button onClick={props.onRetrySync}>重试上传</button>
-        )}
-        <small>
-          {props.sync?.lastError
-            ? "连接不通：" + props.sync.lastError + "，标注可继续"
-            : "断网可继续标注，恢复后自动补传"}
-        </small>
-      </div>
-      <AttemptPanel
-        attempts={attempts}
-        current={current}
-        submissions={submissions}
-        view={view}
-        selected={selected}
-        onSelect={(value) => {
-          setPreparingNew(false);
-          setSelected(value);
-        }}
-        busy={busy}
-      />
-      {notice && (
-        <p className="operation-notice" role="status">
-          {notice}
-        </p>
-      )}
-      <div className="workspace-footer">
-        <span>原始记录始终保留 · 重新标注会创建独立轮次</span>
-        <button
-          disabled={
-            busy ||
-            [
-              "starting",
-              "recording",
-              "preview",
-              "paused",
-              "buffering",
-            ].includes(view.phase) ||
-            props.index === props.total - 1
-          }
-          onClick={props.onNext}
-        >
-          下一个样本 <ArrowRight size={16} />
-        </button>
+        <div className="annotation-column">
+          <AnnotationPad
+            page={page}
+            view={view}
+            canAnnotate={canAnnotate}
+            onPress={(value) => session.press(value)}
+            onMove={(value) => session.setValue(value)}
+            onRelease={() => session.releaseHold()}
+            onGuide={() => {
+              if (dimension) session.releaseHold();
+              props.onGuide();
+            }}
+          />
+
+          {(notice || view.save === "error" || props.sync?.lastError) && (
+            <p className="operation-notice" role="status">
+              {notice ||
+                (view.save === "error"
+                  ? "保存失败：" + view.saveError
+                  : "已保存，联网后上传")}
+            </p>
+          )}
+
+          <div className="v3-navigation">
+            <button
+              className="back-step"
+              disabled={page === "familiarization" || busy}
+              onClick={back}
+            >
+              <ArrowLeft size={17} />
+              上一步
+            </button>
+            <button
+              className="restart-dimension"
+              aria-label="重新标注当前维度"
+              title="仅重新标注当前维度"
+              disabled={!canRestart || busy}
+              onClick={restart}
+            >
+              <RotateCcw size={16} />
+              重标
+            </button>
+            <button
+              className="next-step"
+              disabled={!canAdvance || busy}
+              onClick={next}
+            >
+              <span>
+                {page === "familiarization" ? "已看懂，下一步" : "下一步"}
+              </span>
+              <kbd>
+                <CornerDownLeft size={16} />
+                回车
+              </kbd>
+              <ArrowRight size={20} />
+            </button>
+          </div>
+        </div>
       </div>
     </main>
   );

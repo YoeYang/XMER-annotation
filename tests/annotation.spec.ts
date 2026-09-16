@@ -1,226 +1,502 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
+import type { Attempt, Sample, Submission, Task } from "../src/types";
 
-/**
- * 端到端用例。覆盖的都是单元测试看不见、只有真浏览器能验证的行为：
- * 媒体真的播完、鼠标离开方形后还在不在采样、刷新之后草稿还在不在。
- * 这类 bug 在 pilot 里出现，等于一批人的工时白费。
- *
- * 需要两个环境变量：
- *   E2E_TOKEN     测试标注者的令牌（由 manage.py seed-e2e 产生）
- *   E2E_BASE_URL  可选；指向已部署站点时跳过本地 vite
- */
+// Each browser test gets an isolated V3 API. No research account or live data is used.
+test.use({ channel: process.env.E2E_BROWSER_CHANNEL || undefined });
 
-const TOKEN = process.env.E2E_TOKEN ?? "";
-const ENTRY = process.env.E2E_BASE_URL ? "/annotation/" : "/";
-
-test.skip(!TOKEN, "需要 E2E_TOKEN，见 server/README.md 的端到端一节");
-
-async function open(page: Page) {
-  await page.goto(`${ENTRY}?t=${TOKEN}`);
-  await expect(page.locator(".sample-list")).toBeVisible();
-}
-
-/** 打开某个样本的指定模态。侧栏是分组折叠的，先展开再点。 */
-async function openTask(page: Page, modality: string) {
-  const group = page.locator(".sample-group").first();
-  if (!(await group.locator(".modality-item").first().isVisible())) {
-    await group.locator(".sample-header").click();
-  }
-  await group.getByRole("button", { name: new RegExp(modality) }).click();
-  await expect(page.locator(".media-panel")).toBeVisible();
-}
-
-async function startAnnotating(page: Page) {
-  const pad = page.getByRole("button", { name: "二维情绪标注区域" });
-  await pad.click({ position: { x: 120, y: 90 } });
-  await expect(page.locator(".save-line")).toBeVisible();
-  return pad;
-}
-
-// --------------------------------------------------------------- 身份
-
-test("用专属链接进入后，地址栏里的令牌被抹掉", async ({ page }) => {
-  // 令牌留在地址栏会经 referer 外泄，也会随截图和转发一起送人
-  await open(page);
-  expect(page.url()).not.toContain("t=");
-  await expect(page.locator(".annotator-identity")).toBeVisible();
+test.beforeEach(async ({ page }) => {
+  const modalities: Task["modality"][] = [
+    "face",
+    "body",
+    "audio",
+    "text",
+    "audiovisual",
+  ];
+  const tasks: Task[] = modalities.flatMap((modality) =>
+    [0, 1].map((order_index) => ({
+      task_id: modality + "-" + order_index,
+      media_id: "private-source-" + order_index,
+      display_id: "S0001",
+      modality,
+      src:
+        modality === "text"
+          ? "/transcripts/example.json"
+          : modality === "audio"
+            ? "/media/example/audio.wav"
+            : "/media/example/visual.mp4",
+      duration: 6.715,
+      target: "目标说话人",
+      demo: true,
+      timeline_origin: 0,
+      order_index,
+      speaker_ref_src: "/media/example/speaker.jpg",
+    })),
+  );
+  const attempts = new Map<string, Attempt>();
+  const samples = new Map<string, Map<number, Sample>>();
+  const submissions = new Map<string, Submission>();
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.split("/api")[1];
+    const parts = path.split("/").filter(Boolean);
+    let result: unknown = {};
+    if (path === "/me") {
+      result = {
+        annotator_id: "P3-07",
+        display_name: "测试标注员",
+        phase: "main",
+        tasks,
+      };
+    } else if (path === "/attempts") {
+      result = [...attempts.values()];
+    } else if (path === "/submissions") {
+      result = [...submissions.values()];
+    } else if (parts[0] === "attempts" && request.method() === "PUT") {
+      const id = parts[1];
+      const body = request.postDataJSON();
+      if (parts[2] === "chunks") {
+        const saved = samples.get(id) ?? new Map<number, Sample>();
+        for (const sample of body.samples)
+          saved.set(sample.sample_index, sample);
+        samples.set(id, saved);
+      } else {
+        attempts.set(id, {
+          ...body,
+          schema_version: 1,
+          attempt_id: id,
+          annotator_id: "P3-07",
+          sample_count: 0,
+          last_media_time: 0,
+          calibration: null,
+        });
+      }
+      const attempt = attempts.get(id);
+      if (attempt) {
+        const rows = [...(samples.get(id)?.values() ?? [])];
+        attempt.sample_count = rows.length;
+        attempt.last_media_time = rows.at(-1)?.media_time ?? 0;
+      }
+      result = attempt ?? {};
+    } else if (parts[2] === "submit") {
+      const attempt = attempts.get(parts[1])!;
+      const body = request.postDataJSON();
+      const submission: Submission = {
+        submission_id: body.submission_id,
+        attempt_id: attempt.attempt_id,
+        task_id: attempt.task_id,
+        annotator_id: "P3-07",
+        revision: 1,
+        previous_submission_id: null,
+        submitted_at: new Date().toISOString(),
+        updated_at: null,
+      };
+      submissions.set(submission.submission_id, submission);
+      result = submission;
+    } else if (parts[2] === "samples") {
+      result = [...(samples.get(parts[1])?.values() ?? [])];
+    }
+    await route.fulfill({ json: result });
+  });
 });
 
-test("没有令牌时给出明确指引，而不是白屏或报错堆栈", async ({ page }) => {
-  await page.goto(ENTRY);
+async function open(page: Page) {
+  await page.goto("/?t=frontend-test");
+  await expect(page.locator(".sample-list")).toBeVisible();
+  await expect(page.getByRole("dialog")).toContainText("面部 · 标注指南");
+  await page.getByRole("button", { name: "知道了" }).click();
+  await expect
+    .poll(() =>
+      page
+        .locator(".media-stage video")
+        .evaluate((media: HTMLVideoElement) => media.readyState),
+    )
+    .toBeGreaterThanOrEqual(2);
+}
+
+async function enterValence(page: Page) {
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("效价 Valence标注条")).toBeVisible();
+  await expect(page.getByLabel("播放速度")).toHaveValue("0.5");
+  await expect.poll(() => mediaTime(page)).toBe(0);
+}
+
+async function pressBar(page: Page, ratio = 0.5) {
+  const box = await page
+    .locator(".dimension-row.active .dimension-bar")
+    .boundingBox();
+  if (!box) throw new Error("标注条不可见");
+  await page.mouse.move(box.x + box.width * ratio, box.y + box.height / 2);
+  await page.mouse.down();
+  return box;
+}
+
+async function mediaTime(page: Page) {
+  return page
+    .locator(".media-stage video, .media-stage audio")
+    .evaluate((media: HTMLMediaElement) => media.currentTime);
+}
+
+async function records(
+  page: Page,
+  store: "attempts" | "samples" | "submissions",
+) {
+  return page.evaluate(
+    (storeName) =>
+      new Promise<any[]>((resolve, reject) => {
+        const request = indexedDB.open("xmer-annotation-v1", 1);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const db = request.result;
+          const read = db
+            .transaction(storeName)
+            .objectStore(storeName)
+            .getAll();
+          read.onsuccess = () => {
+            resolve(read.result);
+            db.close();
+          };
+          read.onerror = () => {
+            reject(read.error);
+            db.close();
+          };
+        };
+      }),
+    store,
+  );
+}
+
+test("令牌清除，身份刷新后保留", async ({ page }) => {
+  await open(page);
+  expect(page.url()).not.toContain("t=");
+  await page.reload();
+  await expect(page.locator(".annotator-identity")).toContainText("测试标注员");
+});
+
+test("没有令牌显示入口提示", async ({ page }) => {
+  await page.goto("/");
   await expect(page.locator(".global-error")).toContainText("专属网址");
 });
 
-test("刷新后仍然是同一个人，不需要重新点链接", async ({ page }) => {
+test("五模态顺序与侧栏折叠宽度", async ({ page }) => {
   await open(page);
-  const who = await page.locator(".annotator-identity strong").textContent();
-  await page.reload();
-  await expect(page.locator(".annotator-identity strong")).toHaveText(who!);
-});
-
-// --------------------------------------------------------------- 目录与素材
-
-test("侧栏按样本分组，完整视频排在三个单模态之后", async ({ page }) => {
-  // 先看完整视频会让随后的单模态标注变成回忆而非感知
-  await open(page);
-  const group = page.locator(".sample-group").first();
-  // 选中任务所在的组会自动展开，无条件点击反而会把它折叠
-  if (!(await group.locator(".modality-item").first().isVisible())) {
-    await group.locator(".sample-header").click();
-  }
-  const labels = await group.locator(".modality-item strong").allTextContents();
-  expect(labels).toEqual(["仅视觉", "仅音频", "仅文本", "完整视频"]);
-});
-
-test("目录只显示不透明编号，不泄露样本来自哪个数据集", async ({ page }) => {
-  await open(page);
-  await expect(page.locator(".sample-group .sample-name").first()).toHaveText(
-    /^(S\d{4}|演示样本)$/,
-  );
-  await expect(page.locator(".sidebar")).not.toContainText(
-    /meld|iemocap|chsims|mosi|mustard/i,
-  );
-});
-
-test("进度按样本计数，四个模态都提交才算一个样本完成", async ({ page }) => {
-  // 按任务算会显示 60/80，让人以为快标完了，其实只有 15 个样本是齐的
-  await open(page);
-  const samples = await page.locator(".sample-group").count();
-  await expect(page.locator(".overall-progress strong")).toHaveText(
-    new RegExp(`^0\\s*/\\s*${samples} 个样本$`),
-  );
-});
-
-test("说话人静帧常驻在媒体区上方", async ({ page }) => {
-  await open(page);
-  await openTask(page, "仅视觉");
-  const ref = page.locator(".speaker-ref");
-  await expect(ref).toBeVisible();
-  await expect(ref).toContainText("按这个人进行标注");
-  await expect(ref.locator("img")).toHaveJSProperty("complete", true);
-});
-
-// --------------------------------------------------------------- 采样
-
-test("光标静止不动时仍持续采样", async ({ page }) => {
-  // 静止代表情绪保持稳定，不是没数据
-  await open(page);
-  await openTask(page, "仅视觉");
-  await startAnnotating(page);
-  await page.waitForTimeout(1500);
-  const first = await page.getByTestId("valence").textContent();
-  await page.waitForTimeout(1500);
-  await expect(page.locator(".attempt-panel")).toContainText(/\d/);
-  expect(first).not.toBeNull();
-});
-
-test("鼠标移出方形后保持最后位置，不清零", async ({ page }) => {
-  await open(page);
-  await openTask(page, "仅视觉");
-  const pad = await startAnnotating(page);
-  await pad.hover({ position: { x: 200, y: 40 } });
-  const inside = await page.getByTestId("valence").textContent();
-  await page.locator(".breadcrumb").hover();
-  await page.waitForTimeout(800);
-  await expect(page.getByTestId("valence")).toHaveText(inside!);
-});
-
-test("暂停后停止采样，继续播放后恢复", async ({ page }) => {
-  await open(page);
-  await openTask(page, "仅视觉");
-  await startAnnotating(page);
-  await page.waitForTimeout(1200);
-  await page.getByRole("button", { name: "暂停播放" }).click();
-  const paused = await page.getByTestId("media-time").textContent();
-  await page.waitForTimeout(1200);
-  await expect(page.getByTestId("media-time")).toHaveText(paused!);
-});
-
-// --------------------------------------------------------------- 播放控制
-
-test("选过的倍速在换任务和刷新之后仍然保持", async ({ page }) => {
-  // 微表情细微的样本要放慢才标得动，一个人几十个任务不该每次重选
-  await open(page);
-  await openTask(page, "仅视觉");
-  const speed = page.getByLabel("播放速度");
-  // 0.1 与 0.3 是标注者要求加的：常速下情绪变得太快，手跟不上
-  await expect(speed.locator("option")).toHaveText([
-    "0.1×",
-    "0.3×",
-    "0.5×",
-    "0.75×",
-    "1×",
-    "1.25×",
-    "1.5×",
+  await expect(page.locator(".task-section-heading strong")).toHaveText([
+    "S1 面部",
+    "S2 身体",
+    "S3 音频",
+    "S4 文本",
+    "S5 完整",
   ]);
-  await speed.selectOption("0.1");
-
-  await openTask(page, "仅音频");
-  await expect(page.getByLabel("播放速度")).toHaveValue("0.1");
-
-  await page.reload();
+  await page.getByRole("button", { name: "收起任务侧栏" }).click();
+  await expect(page.locator(".v3-sidebar")).toHaveCSS("width", "56px");
+  await page.getByRole("button", { name: "展开任务侧栏" }).click();
   await expect(page.locator(".sample-list")).toBeVisible();
-  await openTask(page, "仅视觉");
-  await expect(page.getByLabel("播放速度")).toHaveValue("0.1");
 });
 
-// --------------------------------------------------------------- 文本模态
-
-test("整段文字常驻，高亮随播放推进且暂停即停", async ({ page }) => {
+test("仅显示块内序号与工单号", async ({ page }) => {
   await open(page);
-  await openTask(page, "仅文本");
-  const transcript = page.getByTestId("transcript");
-  // 还没开始播就该看到全文：逐词浮现动得太快不好标，句末静默还会整屏空掉
-  const full = (await transcript.textContent())!;
-  expect(full.length).toBeGreaterThan(4);
-
-  await startAnnotating(page);
-  await page.waitForTimeout(1500);
-  await expect(transcript).toHaveText(full);
-  const said = transcript.locator(".said");
-  expect(await said.count()).toBeGreaterThan(0);
-
-  await page.getByRole("button", { name: "暂停播放" }).click();
-  const frozen = await said.count();
-  await page.waitForTimeout(1200);
-  expect(await said.count()).toBe(frozen);
-  await expect(transcript).toHaveText(full);
-});
-
-// --------------------------------------------------------------- 保存与同步
-
-test("断网时标注不中断，恢复后自动补传", async ({ page, context }) => {
-  // 标注者跨境访问，断一下不是小概率事件；中途丢数据等于这个人白干
-  await open(page);
-  await openTask(page, "仅视觉");
-  await startAnnotating(page);
-  await page.waitForTimeout(1000);
-
-  await context.setOffline(true);
-  await page.waitForTimeout(2500);
-  await expect(page.locator(".save-line")).toContainText(/待上传|失败/);
-
-  await context.setOffline(false);
-  await expect(page.locator(".save-line")).toContainText(/已同步|已保存/, {
-    timeout: 30000,
-  });
-});
-
-test("刷新之后草稿还在，不用从头重标", async ({ page }) => {
-  await open(page);
-  await openTask(page, "仅视觉");
-  await startAnnotating(page);
-  await page.waitForTimeout(2000);
-  await expect(page.locator(".save-line")).toContainText(/已同步|已保存/, {
-    timeout: 30000,
-  });
-
-  await page.reload();
-  await expect(page.locator(".sample-list")).toBeVisible();
-  await openTask(page, "仅视觉");
-  // 刷新时正在录制，这一轮状态是「已中断」——要的是采样点没白标
-  await expect(page.locator(".attempt-panel")).toContainText(
-    /进行中|已完成|已中断|待提交/,
+  await expect(page.locator(".workspace-heading")).toContainText("面部 1/2");
+  await expect(page.locator(".sidebar-ticket strong")).toHaveText(
+    "P3-07-face-01",
   );
-  await expect(page.getByTestId("sample-count")).not.toHaveText("0");
+  await expect(page.locator("body")).not.toContainText(/S0001|private-source/);
+});
+
+test("熟悉页自动播放 1 倍速，保留说话人，无说明卡片", async ({ page }) => {
+  await open(page);
+  await expect(page.getByLabel("播放速度")).toHaveValue("1");
+  await expect(page.getByAltText("目标说话人")).toBeVisible();
+  await expect(page.locator(".speaker-ref")).toContainText(
+    "请标注这位说话人的情绪",
+  );
+  await expect.poll(() => mediaTime(page)).toBeGreaterThan(0);
+  await expect(
+    page.locator(".three-step-progress, .eyebrow, .save-line"),
+  ).toHaveCount(0);
+  await expect(page.locator(".next-step kbd")).toContainText("回车");
+  await expect(page.getByRole("button", { name: "暂停媒体" })).toBeVisible();
+  await expect(page.getByLabel("媒体播放进度")).toHaveAttribute("type", "range");
+  await page.getByRole("button", { name: "暂停媒体" }).click();
+  const pausedAt = await mediaTime(page);
+  await page.waitForTimeout(200);
+  expect(await mediaTime(page)).toBe(pausedAt);
+  await page.getByLabel("媒体播放进度").fill("2");
+  expect(await mediaTime(page)).toBeCloseTo(2, 1);
+  await page.getByRole("button", { name: "播放媒体" }).click();
+});
+
+test("初始鼠标光标不代表零值；可在任意位置开始", async ({ page }) => {
+  await open(page);
+  await enterValence(page);
+  await expect(
+    page.locator(".initial-cursor .mouse-left-button"),
+  ).toBeVisible();
+  await expect(page.getByTestId("dimension-value")).toBeEmpty();
+  await expect(page.locator(".mouse-hints .hold-mouse")).toHaveCount(2);
+  await expect(page.locator(".mouse-hints .mouse-left-button")).toHaveCount(1);
+  await expect(page.locator(".mouse-hints")).toContainText("松开暂停");
+  await expect(page.locator(".dimension-row.active .dimension-bar")).toHaveCSS(
+    "height",
+    "28px",
+  );
+  await expect(page.locator(".initial-cursor")).toHaveCSS("height", "58px");
+  await expect(page.getByRole("button", { name: /播放媒体|暂停媒体/ })).toHaveCount(0);
+  await expect(page.getByLabel("媒体播放进度")).not.toHaveAttribute("type", "range");
+  await expect(page.getByLabel("播放速度")).toBeEnabled();
+  await expect(page.getByRole("button", { name: "打开声音" })).toBeDisabled();
+  const valenceIcons = page.locator('[data-dimension="valence"] .bar-semantics svg');
+  await expect(valenceIcons).toHaveCount(2);
+  await expect(valenceIcons.first()).toHaveCSS("fill", "rgb(217, 106, 102)");
+  await expect(valenceIcons.last()).toHaveCSS("fill", "rgb(82, 168, 129)");
+  expect(await records(page, "samples")).toHaveLength(0);
+  await pressBar(page, 0.8);
+  await expect(page.getByTestId("dimension-value")).toHaveText("0.60");
+  await page.mouse.up();
+});
+
+test("非当前维纯灰，没有光标或数值", async ({ page }) => {
+  await open(page);
+  await enterValence(page);
+  const inactive = page.locator(".dimension-row.inactive");
+  await expect(inactive.locator(".bar-cursor, .active-value")).toHaveCount(0);
+  await expect(inactive.locator(".dimension-bar")).toHaveCSS(
+    "background-image",
+    "none",
+  );
+});
+
+test("按住延迟 0.5 秒，媒体同步暂停；右键不启动", async ({ page }) => {
+  await open(page);
+  await enterValence(page);
+  await page
+    .locator(".dimension-row.active .dimension-bar")
+    .click({ button: "right" });
+  expect(await records(page, "attempts")).toHaveLength(0);
+  await pressBar(page);
+  await page.waitForTimeout(250);
+  expect(await mediaTime(page)).toBe(0);
+  await expect(page.locator(".sampling-strip")).toContainText("准备中");
+  await expect(page.locator(".sampling-strip")).toContainText("采样中");
+  await page.mouse.up();
+});
+
+test("松手暂停，再按仍需等待；移出端点继续采样", async ({ page }) => {
+  await open(page);
+  await enterValence(page);
+  const box = await pressBar(page);
+  await expect(page.locator(".sampling-strip")).toContainText("采样中");
+  await page.mouse.move(box.x - 40, box.y + box.height / 2);
+  await expect(page.getByTestId("dimension-value")).toHaveText("-1.00");
+  await page.mouse.up();
+  const stopped = await mediaTime(page);
+  await page.waitForTimeout(250);
+  expect(await mediaTime(page)).toBe(stopped);
+  await pressBar(page, 0.4);
+  await page.waitForTimeout(250);
+  expect(await mediaTime(page)).toBe(stopped);
+  await page.mouse.up();
+});
+
+test("三页完整提交、两种渐变、固定条位置与完成筛选", async ({ page }) => {
+  await open(page);
+  await enterValence(page);
+  const valenceBox = await page
+    .locator('[data-dimension="valence"] .dimension-bar')
+    .boundingBox();
+  const arousalBox = await page
+    .locator('[data-dimension="arousal"] .dimension-bar')
+    .boundingBox();
+  expect(valenceBox!.y).toBeLessThan(arousalBox!.y);
+  const nextBox = await page.locator(".next-step").boundingBox();
+  const valenceGradient = await page
+    .locator(".dimension-row.active .dimension-bar")
+    .evaluate((el) => getComputedStyle(el).backgroundImage);
+  expect(valenceGradient).toContain("217, 106, 102");
+  expect(valenceGradient).toContain("82, 168, 129");
+  await expect(page.locator(".v3-navigation button")).toHaveText([
+    "上一步",
+    "重标",
+    "下一步回车",
+  ]);
+  await page.getByLabel("播放速度").selectOption("1");
+  await pressBar(page);
+  await expect(page.locator(".next-step")).toBeEnabled({ timeout: 20000 });
+  await page.mouse.up();
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("唤醒 Arousal标注条")).toBeVisible();
+  await page.getByRole("button", { name: "标注指南", exact: true }).click();
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("唤醒 Arousal标注条")).toBeVisible();
+  await expect(page.getByLabel("播放速度")).toHaveValue("1");
+  await page.getByLabel("播放速度").selectOption("0.5");
+  expect(
+    await page
+      .locator('[data-dimension="valence"] .dimension-bar')
+      .boundingBox(),
+  ).toEqual(valenceBox);
+  expect(
+    await page
+      .locator('[data-dimension="arousal"] .dimension-bar')
+      .boundingBox(),
+  ).toEqual(arousalBox);
+  expect(await page.locator(".next-step").boundingBox()).toEqual(nextBox);
+  const arousalGradient = await page
+    .locator(".dimension-row.active .dimension-bar")
+    .evaluate((el) => getComputedStyle(el).backgroundImage);
+  expect(arousalGradient).not.toBe(valenceGradient);
+  expect(arousalGradient).toContain("244, 215, 108");
+  await pressBar(page);
+  await expect(page.locator(".next-step")).toBeEnabled({ timeout: 20000 });
+  await page.mouse.up();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".workspace-heading")).toContainText("面部 2/2");
+  await expect
+    .poll(async () => (await records(page, "submissions")).length)
+    .toBe(2);
+  const attempts = await records(page, "attempts");
+  const samples = await records(page, "samples");
+  const valence = attempts.find((attempt) => attempt.dimension === "valence");
+  const arousal = attempts.find((attempt) => attempt.dimension === "arousal");
+  const timesFor = (id: string) =>
+    samples
+      .filter((sample) => sample.attempt_id === id)
+      .sort((left, right) => left.sample_index - right.sample_index)
+      .map((sample) => sample.media_time);
+  expect(timesFor(valence.attempt_id)).toEqual(timesFor(arousal.attempt_id));
+  expect(timesFor(valence.attempt_id)).toEqual(
+    Array.from({ length: 68 }, (_, index) => index / 10),
+  );
+  await expect(page.locator('.task-item [aria-label="已完成"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "未完成", exact: true }).click();
+  await expect(page.locator(".task-item")).toHaveCount(1);
+  await expect(page.locator(".task-item")).toHaveText("S1-2");
+  await page.getByRole("button", { name: "全部任务" }).click();
+  await page.getByRole("button", { name: "S1-1" }).click();
+  await expect(page.getByLabel("唤醒 Arousal标注条")).toBeVisible();
+  await page.getByRole("button", { name: "重新标注当前维度" }).click();
+  await expect(page.locator(".next-step")).toBeDisabled();
+  expect(
+    (await records(page, "attempts")).filter(
+      (attempt) => attempt.dimension === "valence",
+    ),
+  ).toHaveLength(1);
+});
+
+test("熟悉与效价页可重开指南，回车关闭不推进、不创建标注", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "标注指南", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("面部表情");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".familiarization-copy")).toBeVisible();
+  await enterValence(page);
+  await page.getByRole("button", { name: "标注指南", exact: true }).click();
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("效价 Valence标注条")).toBeVisible();
+  expect(await records(page, "attempts")).toHaveLength(0);
+  expect(await mediaTime(page)).toBe(0);
+});
+
+test("标注倍速在刷新与换任务后保留，熟悉仍为 1 倍速", async ({ page }) => {
+  await open(page);
+  await enterValence(page);
+  await page.getByLabel("播放速度").selectOption("0.7");
+  await page.reload();
+  await page.getByRole("button", { name: "知道了" }).click();
+  await expect(page.getByLabel("播放速度")).toHaveValue("1");
+  await page.locator(".next-step").click();
+  await expect(page.getByLabel("播放速度")).toHaveValue("0.7");
+  await page.getByLabel("播放速度").selectOption("0.3");
+  await page.getByRole("button", { name: "S1-2" }).click();
+  await expect(page.getByLabel("播放速度")).toHaveValue("1");
+  await page.locator(".next-step").click();
+  await expect(page.getByLabel("播放速度")).toHaveValue("0.3");
+});
+
+test("返回熟悉页恢复 1 倍速", async ({ page }) => {
+  await open(page);
+  await page.getByLabel("播放速度").selectOption("0.1");
+  await page.locator(".next-step").click();
+  await expect(page.getByLabel("播放速度")).toHaveValue("0.5");
+  await page.getByLabel("播放速度").selectOption("1");
+  await page.getByRole("button", { name: "上一步" }).click();
+  await expect(page.getByLabel("播放速度")).toHaveValue("1");
+});
+
+test("跨模态回车只确认指引，不推进背后的页面", async ({ page }) => {
+  await open(page);
+  const section = page
+    .locator(".task-section")
+    .filter({ has: page.getByText("S2 身体", { exact: true }) });
+  await section.locator(".task-section-heading").click();
+  await page.getByRole("button", { name: "S2-1" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".workspace-heading")).toContainText("身体 1/2");
+  await expect(page.locator(".familiarization-copy")).toBeVisible();
+});
+
+test("音频 0.1 倍速警告", async ({ page }) => {
+  await open(page);
+  const section = page
+    .locator(".task-section")
+    .filter({ has: page.getByText("S3 音频", { exact: true }) });
+  await section.locator(".task-section-heading").click();
+  await page.getByRole("button", { name: "S3-1" }).click();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".workspace-heading")).toContainText("仅音频");
+  await page.getByLabel("播放速度").selectOption("0.1");
+  await expect(page.locator(".rate-warning")).toContainText("难以听清");
+  const volume = page.getByRole("button", { name: "静音" });
+  await expect(volume).toBeEnabled();
+  await volume.click();
+  await expect(page.getByRole("button", { name: "打开声音" })).toBeEnabled();
+});
+
+test("刷新保留中断草稿，需要显式重标", async ({ page }) => {
+  await open(page);
+  await enterValence(page);
+  await pressBar(page);
+  await expect(page.locator(".sampling-strip")).toContainText("采样中");
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await records(page, "samples")).length)
+    .toBeGreaterThan(0);
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "重新标注当前维度" }),
+  ).toBeEnabled();
+  await expect(page.locator(".next-step")).toBeDisabled();
+});
+
+test("断网继续本地保存并自动补传", async ({ page, context }) => {
+  await open(page);
+  await enterValence(page);
+  const offline = (route: Route) => route.abort("internetdisconnected");
+  await page.route("**/api/**", offline);
+  await context.setOffline(true);
+  await pressBar(page);
+  await expect(page.locator(".sampling-strip")).toContainText("采样中");
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await records(page, "samples")).length)
+    .toBeGreaterThan(0);
+  await expect(page.locator(".operation-notice")).toContainText("联网后上传");
+  await page.unroute("**/api/**", offline);
+  await context.setOffline(false);
+  await expect(page.locator(".operation-notice")).toHaveCount(0, {
+    timeout: 20000,
+  });
+});
+
+test("720px 与 390px 无横向溢出，说话人与导航可见", async ({ page }) => {
+  await open(page);
+  await enterValence(page);
+  for (const width of [720, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+      .toBe(width);
+    await expect(page.getByAltText("目标说话人")).toBeVisible();
+    await expect(page.locator(".next-step")).toBeVisible();
+  }
 });

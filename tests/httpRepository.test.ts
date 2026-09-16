@@ -1,19 +1,33 @@
 import { describe, expect, it, vi } from "vitest";
 import { HttpRepository } from "../src/storage/httpRepository";
 import type { Attempt, Sample, Task } from "../src/types";
-import tasks from "../public/tasks.json";
+
+const task: Task = {
+  task_id: "source::face",
+  media_id: "source-face",
+  display_id: "S0001",
+  modality: "face",
+  src: "/media/example/visual.mp4",
+  duration: 1.95,
+  target: "目标人物",
+  demo: true,
+  timeline_origin: 0,
+  order_index: 0,
+};
 
 function attempt(overrides: Partial<Attempt> = {}): Attempt {
   return {
     schema_version: 1,
     attempt_id: "att-1",
-    task_id: "DEMO-001",
+    task_id: task.task_id,
     annotator_id: "A001",
-    media_id: "demo-visual",
-    modality: "visual",
+    media_id: task.media_id,
+    modality: task.modality,
     mode: "annotation",
+    dimension: "valence",
+    familiarization_plays: 1.3,
     status: "recording",
-    task_snapshot: tasks[0] as Task,
+    task_snapshot: task,
     sample_rate_hz: 10,
     started_at: "2026-09-11T00:00:00.000Z",
     completed_at: null,
@@ -25,17 +39,16 @@ function attempt(overrides: Partial<Attempt> = {}): Attempt {
   };
 }
 const sample = (index: number): Sample => ({
-  task_id: "DEMO-001",
+  task_id: task.task_id,
   annotator_id: "A001",
-  modality: "visual",
-  media_id: "demo-visual",
+  modality: task.modality,
+  media_id: task.media_id,
   attempt_id: "att-1",
   sample_index: index,
   media_time: index * 0.1,
   wall_time: "2026-09-11T00:00:00.000Z",
   is_valid: true,
-  valence: 0.1,
-  arousal: 0.2,
+  value: 0.1,
 });
 const ok = (body: unknown = {}) =>
   new Response(JSON.stringify(body), {
@@ -65,6 +78,10 @@ describe("云端存储", () => {
       "/annotation/api/attempts/att-1/chunks/3",
     ]);
     expect(calls[0][1].method).toBe("PUT");
+    expect(JSON.parse(calls[0][1].body as string)).toMatchObject({
+      dimension: "valence",
+      familiarization_plays: 1.3,
+    });
     expect(JSON.parse(calls[1][1].body as string).samples).toHaveLength(2);
   });
 
