@@ -119,17 +119,17 @@ def process(sample_id):
 
     video = MEDIA_DIR / "out" / "media" / sample_id / "visual.mp4"
     if not video.exists():
-        _write(out_path, sample_id, 0, 0, None, [], {}, "drop", ["video_missing"])
+        _write(out_path, sample_id, 0, 0, None, None, {}, "drop", ["video_missing"])
         return "drop"
 
     tmpl, err = template(sample_id)
     if tmpl is None:
-        _write(out_path, sample_id, 0, 0, None, [], {}, "drop", [err])
+        _write(out_path, sample_id, 0, 0, None, None, {}, "drop", [err])
         return "drop"
 
     frames, fps = read_video(video)
     if not frames:
-        _write(out_path, sample_id, fps, 0, None, [], {}, "drop", ["no_frames"])
+        _write(out_path, sample_id, fps, 0, None, None, {}, "drop", ["no_frames"])
         return "drop"
 
     h, w = frames[0].shape[:2]
@@ -141,29 +141,30 @@ def process(sample_id):
             f.pop("_row", None)
         cands.append(faces)
 
-    track, stats, status, reasons = tc.build(cands, fps, h)
-    _write(out_path, sample_id, fps, len(frames), (w, h), track, stats, status, reasons)
+    crop, stats, status, reasons = tc.build(cands, fps, w, h)
+    _write(out_path, sample_id, fps, len(frames), (w, h), crop, stats, status, reasons)
     return status
 
 
-def _write(path, sample_id, fps, n_frames, wh, track, stats, status, reasons):
+# 早期失败（视频缺失、静帧检不出脸）也要写出完整形状的 stats，
+# 否则下游读 face_present_ratio 之类会 KeyError——判级失败不等于字段可以少。
+EMPTY_STATS = {
+    "detected": 0, "face_present_ratio": 0.0, "face_inside_ratio": 0.0,
+    "max_gap_frames": 0, "max_gap_seconds": 0.0,
+    "det_rate": 0.0, "mean_sim": 0.0, "mean_face_h_ratio": 0.0,
+}
+
+
+def _write(path, sample_id, fps, n_frames, wh, crop, stats, status, reasons):
     path.parent.mkdir(parents=True, exist_ok=True)
+    stats = {**EMPTY_STATS, **(stats or {})}
     rec = {
         "sample_id": sample_id,
         "fps": round(float(fps), 6),
         "n_frames": n_frames,
         "w": wh[0] if wh else 0,
         "h": wh[1] if wh else 0,
-        "track": [
-            None if t is None else {
-                "i": i,
-                "bbox": [round(v, 2) for v in t["bbox"]],
-                "det": round(t["det"], 4),
-                "sim": round(t["sim"], 4),
-                "src": t["src"],
-            }
-            for i, t in enumerate(track)
-        ],
+        "crop": crop,
         "stats": stats,
         "status": status,
         "reasons": reasons,
