@@ -97,18 +97,23 @@ export default function MediaPanel({
     >
       <div className="media-toolbar">
         <figure className="speaker-ref">
-          {task.speaker_ref_src && (
+          {/* 身体模态不给静帧：那张脸正是画面里被遮住的部位，
+              拿出来看等于把遮挡白做了——标注者会照着静帧上的表情判断，
+              而这一轮要的恰恰是"看不见表情时，只凭肢体能读出什么"。 */}
+          {task.modality !== "body" && task.speaker_ref_src && (
             <img
               src={resolveAssetPath(task.speaker_ref_src)}
               alt="目标说话人"
             />
           )}
           <figcaption>
-            {task.speaker_ref_src
-              ? "请标注这位说话人的情绪"
-              : task.speaker_name
-                ? "说话人：" + task.speaker_name
-                : "未提供说话人指示"}
+            {task.modality === "body"
+              ? "请标注被遮住脸部的人的肢体情绪"
+              : task.speaker_ref_src
+                ? "请标注这位说话人的情绪"
+                : task.speaker_name
+                  ? "说话人：" + task.speaker_name
+                  : "未提供说话人指示"}
           </figcaption>
         </figure>
       </div>
