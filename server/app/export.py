@@ -4,6 +4,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .completion import superseded_ids
 from .models import Annotator, Attempt, SampleChunk, Submission
 from .timeutils import to_utc_iso
 
@@ -34,6 +35,9 @@ def build_export(session: Session, annotator: Annotator) -> dict[str, Any]:
         .where(Submission.annotator_id == annotator.annotator_id)
         .order_by(Submission.submitted_at)
     ).all()
+    # 被更新版本顶替的旧版：全部留在导出里（重标过几次是质检信号），
+    # 但打上标记，分析脚本一眼就能跳过，不必自己重算版本链。
+    stale = superseded_ids(session, annotator.annotator_id)
 
     return {
         "schema_version": 1,
@@ -51,6 +55,8 @@ def build_export(session: Session, annotator: Annotator) -> dict[str, Any]:
                 "media_id": a.media_id,
                 "modality": a.modality,
                 "mode": a.mode,
+                "dimension": a.dimension,
+                "familiarization_plays": a.familiarization_plays,
                 "status": a.status,
                 "task_snapshot": a.task_snapshot,
                 "sample_rate_hz": a.sample_rate_hz,
@@ -70,7 +76,10 @@ def build_export(session: Session, annotator: Annotator) -> dict[str, Any]:
                 "task_id": s.task_id,
                 "annotator_id": s.annotator_id,
                 "attempt_id": s.attempt_id,
+                # 效价与唤醒是两条独立的链，各自从 revision 1 开始
+                "dimension": s.dimension,
                 "revision": s.revision,
+                "superseded": s.submission_id in stale,
                 "previous_submission_id": s.previous_submission_id,
                 "submitted_at": _iso(s.submitted_at),
                 "updated_at": _iso(s.updated_at),

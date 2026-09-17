@@ -55,10 +55,14 @@ def test_progress_counts_assignments_and_anchors(
     assert row["phase"] == "pilot"
 
 
-def test_progress_counts_a_task_once_despite_multiple_revisions(
+def test_progress_does_not_count_a_half_done_subtask(
     client: TestClient, session: Session, annotator, task, attempt, second_attempt
 ):
-    """同一任务提交两版仍算完成一个任务，否则进度虚高。"""
+    """只标了效价——哪怕重标了两版——都不算完成。
+
+    V3 一个子任务要标两个维度。按提交条数或按 task_id 去重来数，
+    这里会算成「完成 1 个」，而交上来的数据其实缺了唤醒那一半。
+    """
     session.add_all(
         [
             Submission(
@@ -86,7 +90,43 @@ def test_progress_counts_a_task_once_despite_multiple_revisions(
 
     body = client.get("/api/admin/progress", headers=ADMIN).json()
     row = next(r for r in body["annotators"] if r["annotator_id"] == "A001")
+    assert row["submitted"] == 0, "缺一个维度就不算标完"
+    assert row["in_progress"] == 1, "但要看得出这条已经动过了"
+
+
+def test_progress_counts_a_subtask_once_when_both_dimensions_are_in(
+    client: TestClient, session: Session, annotator, task, attempt, second_attempt
+):
+    """两个维度都交了才算完成，且只算一次。"""
+    second_attempt.dimension = "arousal"
+    session.add_all(
+        [
+            Submission(
+                submission_id="s1",
+                task_id=task.task_id,
+                annotator_id=annotator.annotator_id,
+                attempt_id=attempt.attempt_id,
+                dimension="valence",
+                revision=1,
+                submitted_at=NOW,
+            ),
+            Submission(
+                submission_id="s2",
+                task_id=task.task_id,
+                annotator_id=annotator.annotator_id,
+                attempt_id=second_attempt.attempt_id,
+                dimension="arousal",
+                revision=1,
+                submitted_at=NOW,
+            ),
+        ]
+    )
+    session.commit()
+
+    body = client.get("/api/admin/progress", headers=ADMIN).json()
+    row = next(r for r in body["annotators"] if r["annotator_id"] == "A001")
     assert row["submitted"] == 1
+    assert row["in_progress"] == 0
 
 
 def test_progress_lists_annotators_with_nothing_assigned(

@@ -16,6 +16,7 @@ import argparse
 import csv
 import json
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 from sqlalchemy import delete, func, select
@@ -406,6 +407,53 @@ def cmd_set_durations(args):
     print(f"时长校正：更新 {changed}，清单里没有的任务 {missing}")
 
 
+def cmd_purge_superseded(args):
+    """重标产生的旧版本，只保留最新 `--keep` 份的采样点。
+
+    删的是**采样点**——一条曲线几百上千个点，重标五遍就占五份。
+    `Attempt` 与 `Submission` 的元数据行一条不动：重标过几次是质检信号，
+    标了五遍的人，他的数据在分析时要单独看，这条线索不能因为清理而消失。
+
+    效价与唤醒**各留各的**，不能合在一起数——那会把标得认真的那一维
+    连带清掉。
+    """
+    if args.keep < 1:
+        raise SystemExit("--keep 至少为 1：留 0 份等于把最新版也删掉。")
+
+    factory = session_factory()
+    with factory() as session:
+        chains = defaultdict(list)
+        for row in session.scalars(select(Submission)):
+            chains[(row.annotator_id, row.task_id, row.dimension)].append(row)
+
+        doomed = []
+        for rows in chains.values():
+            rows.sort(key=lambda r: r.revision, reverse=True)
+            doomed.extend(r.attempt_id for r in rows[args.keep:])
+
+        if not doomed:
+            print(f"没有超出 {args.keep} 份的旧版本，无需清理。")
+            return
+
+        chunks = session.scalar(
+            select(func.count())
+            .select_from(SampleChunk)
+            .where(SampleChunk.attempt_id.in_(doomed))
+        )
+        if args.dry_run:
+            print(f"将清理 {len(doomed)} 个旧版本的 {chunks} 块采样（未执行）。")
+            return
+
+        session.execute(
+            delete(SampleChunk).where(SampleChunk.attempt_id.in_(doomed))
+        )
+        session.commit()
+        print(
+            f"已清理 {len(doomed)} 个旧版本的 {chunks} 块采样；"
+            f"轮次与提交记录原样保留。"
+        )
+
+
 def cmd_status(args):
     factory = session_factory()
     with factory() as session:
@@ -502,6 +550,15 @@ def main():
     durations = sub.add_parser("set-durations", help="按 JSON 批量校正任务时长")
     durations.add_argument("--file", required=True, help="{task_id: 秒数}")
     durations.set_defaults(func=cmd_set_durations)
+
+    purge = sub.add_parser(
+        "purge-superseded", help="清理重标旧版本的采样点（元数据保留）"
+    )
+    purge.add_argument(
+        "--keep", type=int, default=3, help="每个维度保留最新几份采样，默认 3"
+    )
+    purge.add_argument("--dry-run", action="store_true", help="只报告，不删")
+    purge.set_defaults(func=cmd_purge_superseded)
 
     status = sub.add_parser("status", help="查看账号与分配现状")
     status.set_defaults(func=cmd_status)

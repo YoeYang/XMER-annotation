@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from .assignments import replace_assignments, tasks_by_sample_modality
 from .auth import get_session, hash_token, new_token
 from .export import build_export
+from .completion import completed_counts
 from .models import Annotator, Assignment, Attempt, AttemptFlag, Submission
 from .config import PHASES
 from .timeutils import to_utc_iso
@@ -52,8 +53,12 @@ def read_progress(session: Session = Depends(get_session)) -> dict:
             .group_by(Assignment.annotator_id)
         ).all()
     )
-    # 一个任务可能有多个版本的提交，按 task_id 去重才是"完成了多少任务"
-    done = dict(
+    # V3 的一个子任务要标两个维度，**两个都交了才算标完**。
+    # 按 task_id 去重的话，只标了效价的子任务也会被算成完成——
+    # 进度表看着漂亮，交上来的数据缺一半维度。
+    done = completed_counts(session)
+    # 交了但还没交齐两维的，单独列出来：这是催办时最该看的一列
+    partial = dict(
         session.execute(
             select(
                 Submission.annotator_id, func.count(func.distinct(Submission.task_id))
@@ -91,6 +96,8 @@ def read_progress(session: Session = Depends(get_session)) -> dict:
                 "anchors": anchors.get(aid, 0),
                 "started": started.get(aid, 0),
                 "submitted": done.get(aid, 0),
+                # 动过但两维还没齐的子任务数
+                "in_progress": partial.get(aid, 0) - done.get(aid, 0),
                 "last_activity": _iso(last_seen.get(aid)),
             }
         )
@@ -101,6 +108,7 @@ def read_progress(session: Session = Depends(get_session)) -> dict:
             "annotators": len(rows),
             "assigned": sum(r["assigned"] for r in rows),
             "submitted": sum(r["submitted"] for r in rows),
+            "in_progress": sum(r["in_progress"] for r in rows),
         },
     }
 
