@@ -81,3 +81,17 @@ cd text-alignment && python -m pytest tests -q    # 10 个，对齐保真度（�
 ```
 
 `speaker-frames` 的 21 个脚本没有自动化测试，改动后只能人工核对产物。
+
+## 在 Roihu 上跑前端测试
+
+Roihu 没装 node，但有 singularity，一次性容器就能跑：
+
+```bash
+singularity pull node20.sif docker://node:20-alpine
+singularity exec -B "$PWD:/src" --pwd /src node20.sif npm ci
+singularity exec -B "$PWD:/src" --pwd /src node20.sif npm test -- --run
+singularity exec -B "$PWD:/src" --pwd /src node20.sif npx tsc --noEmit
+```
+
+在仓库根目录（`05-annotation/`）跑。`node_modules` 会落在工作目录里，
+**别提交**（已在 .gitignore）。

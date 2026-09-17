@@ -73,7 +73,8 @@ def probe(path):
 
 
 def _run(args):
-    return subprocess.run([str(FFMPEG), "-hide_banner", "-loglevel", "error", "-y"]
+    return subprocess.run([str(FFMPEG), "-hide_banner", "-loglevel", "error",
+                           "-y"]
                           + args, capture_output=True, text=True)
 
 

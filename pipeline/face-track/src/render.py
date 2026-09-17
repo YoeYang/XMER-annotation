@@ -30,6 +30,7 @@ cv2 的 VideoWriter 只有 mp4v 能开），用的是装在 conflict-sampling-x8
 import argparse
 import json
 import subprocess
+import os
 import sys
 from fractions import Fraction
 from pathlib import Path
@@ -41,9 +42,19 @@ from datapaths import MEDIA_DIR
 
 TRACKS = Path(__file__).resolve().parents[1] / "out" / "tracks"
 FFMPEG = Path(
-    "/projappl/project_2017416/python-package/conflict-sampling-x86/lib/python3.9"
+    os.environ.get("XMER_FFMPEG")
+    or "/projappl/project_2017416/python-package/conflict-sampling-x86/lib/python3.9"
     "/site-packages/imageio_ffmpeg/binaries/ffmpeg-linux-x86_64-v7.0.2"
 )
+"""能编码 H.264 的 ffmpeg。
+
+默认那个是 x86 静态构建，给 `small` 等 x86 计算分区用——x86 上别的 ffmpeg
+都不行（spack 的是 ARM 二进制，x86 spack 树里那个不带 libx264）。
+
+**登录节点与 gpu* 分区是 ARM**，跑不了这个二进制，要用
+`module load python-data/3.12-20.04` 自带的 8.0.1（ARM 上唯一带 libx264 的），
+并设 `XMER_FFMPEG` 指过去。
+"""
 BODY_MASK_EXPAND = 0.10
 """body 遮挡块相对检测框的外扩比例。
 

@@ -100,6 +100,10 @@ async function strandLocally(db: IndexedDbRepository, points: number) {
   const samples = Array.from({ length: points }, (_, i) =>
     makeSample({ ...attempt, sample_count: i }, i * 0.1, 0.5),
   );
+  // sample_count 必须先长到采样点数：checkpoint 会拒收
+  // sample_index >= sample_count 的点（防止把没记进轮次的点偷偷塞进来）
+  attempt.sample_count = points;
+  attempt.last_media_time = (points - 1) * 0.1;
   await db.checkpoint(attempt, samples);
   const submission = await db.submit(attempt.attempt_id);
   return { attempt, samples, submission };
