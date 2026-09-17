@@ -508,3 +508,33 @@ def test_attempt_rejects_unknown_dimension(client, assigned):
         "/api/attempts/att-bad", json=attempt_body(dimension="both"), headers=assigned
     )
     assert response.status_code == 422
+
+
+def test_familiarization_plays_accepts_a_fraction(client: TestClient, assigned):
+    """熟悉页播到一半就上手，记的是 1.4 遍而不是 1 遍。
+
+    前端算的是「播放圈数 + 当前这遍的进度」，本来就是小数——
+    `models.py` 的注释自己写着「只播 0.3 遍就上手的人要单独看」。
+    把这一列定成整数，前端每次提交都被 422 挡下，而客户端的重试队列
+    会把这一次失败放大成无限次重试：线上实测 321 个 422。
+    """
+    response = client.put(
+        "/api/attempts/att-1",
+        json=attempt_body(familiarization_plays=1.4),
+        headers=assigned,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["familiarization_plays"] == pytest.approx(1.4)
+
+
+def test_familiarization_plays_survives_a_round_trip(
+    client: TestClient, session: Session, assigned
+):
+    """小数要真的存进库，不能在落库时被截成整数。"""
+    client.put(
+        "/api/attempts/att-1",
+        json=attempt_body(familiarization_plays=0.3),
+        headers=assigned,
+    )
+    listed = client.get("/api/attempts", headers=assigned).json()[0]
+    assert listed["familiarization_plays"] == pytest.approx(0.3)

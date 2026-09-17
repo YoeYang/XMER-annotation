@@ -145,8 +145,12 @@ class Attempt(Base):
     dimension: Mapped[str] = mapped_column(Text, nullable=False)
     # 熟悉页真正播了几遍。既是流程记录，也是质检信号——
     # 只播 0.3 遍就上手的人，后续标注质量要单独看。
-    familiarization_plays: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0
+    #
+    # **是小数不是整数**：前端记的是「播完的圈数 + 当前这遍的进度」，
+    # 「0.3 遍」这个说法本身就要求小数。定成整数会让每次提交都被 422 挡下，
+    # 而客户端的重试队列把这一次失败放大成无限重试。
+    familiarization_plays: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0
     )
     status: Mapped[str] = mapped_column(Text, nullable=False)
     task_snapshot: Mapped[dict] = mapped_column(JsonCol, nullable=False)

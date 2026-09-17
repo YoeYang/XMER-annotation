@@ -7,7 +7,6 @@ import type { SyncState } from "../storage/syncingRepository";
 import type { Attempt, Dimension, FlowPage, Submission, Task } from "../types";
 import { MODALITY_LABELS } from "../config";
 import AnnotationPad from "./AnnotationPad";
-import CloudStatus from "./CloudStatus";
 import MediaPanel from "./MediaPanel";
 
 interface Props {
@@ -248,13 +247,14 @@ export default function Workspace(props: Props) {
             }}
           />
 
-          <CloudStatus sync={props.sync} saveError={
-            view.save === "error" ? view.saveError : null
-          } />
-
-          {notice && (
+          {/* 不显示保存/上传状态：那分散注意力，而标注者对它也无能为力。
+              侧栏打勾即代表这条标完并已记下，上传是否到云端在管理后台看。
+              只有本机都写不进去（浏览器存储被禁/满）才必须告诉人，
+              那种情况下继续标就是白标。 */}
+          {(notice || view.save === "error") && (
             <p className="operation-notice" role="status">
-              {notice}
+              {notice ||
+                "本机存储写入失败，请检查浏览器设置后刷新：" + view.saveError}
             </p>
           )}
 

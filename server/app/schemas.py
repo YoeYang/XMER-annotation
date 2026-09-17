@@ -48,7 +48,7 @@ class AttemptIn(BaseModel):
     modality: str
     mode: Literal["preview", "annotation"]
     dimension: Literal["valence", "arousal"]
-    familiarization_plays: int = 0
+    familiarization_plays: float = 0
     status: Literal["recording", "paused", "completed", "interrupted"]
     task_snapshot: dict[str, Any]
     events: list[dict[str, Any]] = Field(default_factory=list)
@@ -70,7 +70,7 @@ class AttemptOut(BaseModel):
     modality: str
     mode: str
     dimension: str
-    familiarization_plays: int
+    familiarization_plays: float
     status: str
     task_snapshot: dict[str, Any]
     sample_rate_hz: int
