@@ -13,6 +13,36 @@ export interface SyncState {
 const DEFAULT_RETRY_MS = [1000, 2000, 5000, 15000, 30000];
 
 /**
+ * 本机有、服务器没有的采样点，切成连续的几段。
+ *
+ * 不能把整条采样当一块推上去：服务器按「块内第一个序号」给每块编号，
+ * 而它那边可能已经存着按别的边界切好的块。整条推过去会和已有的块
+ * 撞上编号被忽略，后半截就悄悄丢了；分段推则每段各自落位，
+ * 已经到过的点一个都不会重复。
+ */
+export function missingRuns(mine: Sample[], theirs: Sample[]): Sample[][] {
+  const arrived = new Set(theirs.map((row) => row.sample_index));
+  const runs: Sample[][] = [];
+  let run: Sample[] = [];
+  for (const sample of [...mine].sort(
+    (a, b) => a.sample_index - b.sample_index,
+  )) {
+    if (arrived.has(sample.sample_index)) {
+      if (run.length) runs.push(run);
+      run = [];
+      continue;
+    }
+    if (run.length && sample.sample_index !== run[run.length - 1].sample_index + 1) {
+      runs.push(run);
+      run = [];
+    }
+    run.push(sample);
+  }
+  if (run.length) runs.push(run);
+  return runs;
+}
+
+/**
  * 本地先写、后台同步。
  *
  * 标注数据先落 IndexedDB 再入队推送，断网期间标注照常进行，恢复后补传；
@@ -125,6 +155,59 @@ export class SyncingRepository implements AnnotationRepository {
   async recoverInterrupted(annotator: string) {
     await this.local.recoverInterrupted(annotator);
     this.enqueue(() => this.remote.recoverInterrupted(annotator));
+  }
+
+  /**
+   * 补发卡在本机、始终没到服务器的提交。
+   *
+   * 正常情况下标完一条就立刻同步，网断了也会自动重试——但那份"待重试"
+   * 的清单只活在内存里。标完点保存、恰好断网、再把浏览器关掉，清单就没了，
+   * 那条标注从此躺在本机，服务器永远不知道它存在，直到最后汇总时才发现
+   * 少了一条，而那时已经说不清是谁的哪一条。
+   *
+   * 所以每次登录先核对一遍：本机已提交、服务器却没有的，补发过去。
+   * **只管已提交的**——标到一半的重标一次就是了，管它反而要处理
+   * "断点续标"那一大堆麻烦事。
+   *
+   * 重发是安全的：沿用本机那个提交编号，服务器认得出是同一次提交。
+   */
+  async resyncSubmitted(annotator: string): Promise<number> {
+    const [mine, theirs] = await Promise.all([
+      this.local.listSubmissions(annotator),
+      this.remote.listSubmissions(annotator),
+    ]);
+    const arrived = new Set(theirs.map((row) => row.attempt_id));
+    const stranded = mine.filter((row) => !arrived.has(row.attempt_id));
+    if (!stranded.length) return 0;
+
+    const attempts = new Map(
+      (await this.local.listAttempts(annotator)).map((row) => [
+        row.attempt_id,
+        row,
+      ]),
+    );
+
+    let sent = 0;
+    for (const submission of stranded) {
+      const attempt = attempts.get(submission.attempt_id);
+      // 本机连轮次都没有，无从补起——这条只能作废，硬造一条假的更糟
+      if (!attempt) continue;
+      // 轮次本身先过去（幂等写入），否则服务器不认这个 attempt_id
+      await this.remote.checkpoint(attempt, []);
+      const samples = await this.local.attemptSamples(attempt.attempt_id);
+      for (const run of missingRuns(
+        samples,
+        await this.remote.attemptSamples(attempt.attempt_id),
+      )) {
+        await this.remote.checkpoint(attempt, run);
+      }
+      await this.remote.submitWith(
+        attempt.attempt_id,
+        submission.submission_id,
+      );
+      sent += 1;
+    }
+    return sent;
   }
   /** 读优先服务器（跨设备恢复），不可达时回落本地。 */
   private async preferRemote<T>(

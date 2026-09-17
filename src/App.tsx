@@ -122,6 +122,9 @@ export default function App() {
         }
         const list = orderedTasks(validateTasks(me.tasks));
         await repository.recoverInterrupted(me.annotator_id);
+        // 补发上次卡在本机没送出去的提交。失败了不拦着人干活——
+        // 数据还在本机，下次登录再补；拦在这里只会让人连页面都进不去。
+        await repository.resyncSubmitted(me.annotator_id).catch(() => 0);
         const [nextAttempts, nextSubmissions] = await Promise.all([
           repository.listAttempts(me.annotator_id),
           repository.listSubmissions(me.annotator_id),
