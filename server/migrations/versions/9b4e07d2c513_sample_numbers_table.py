@@ -52,8 +52,10 @@ def upgrade() -> None:
     # 与其让约束报一句看不懂的话，不如在这里说清楚是哪几个编号。
     clashes = conn.execute(
         sa.text(
-            "SELECT display_id, count(DISTINCT source_id) AS n FROM tasks "
-            "WHERE display_id IS NOT NULL GROUP BY display_id HAVING n > 1"
+            # HAVING 里重写整个聚合，不引用 SELECT 的别名：
+            # Postgres 不认别名，SQLite 认——只在 SQLite 上测过就会漏掉。
+            "SELECT display_id FROM tasks WHERE display_id IS NOT NULL "
+            "GROUP BY display_id HAVING count(DISTINCT source_id) > 1"
         )
     ).fetchall()
     if clashes:
@@ -64,8 +66,8 @@ def upgrade() -> None:
         )
     doubles = conn.execute(
         sa.text(
-            "SELECT source_id, count(DISTINCT display_id) AS n FROM tasks "
-            "WHERE display_id IS NOT NULL GROUP BY source_id HAVING n > 1"
+            "SELECT source_id FROM tasks WHERE display_id IS NOT NULL "
+            "GROUP BY source_id HAVING count(DISTINCT display_id) > 1"
         )
     ).fetchall()
     if doubles:
