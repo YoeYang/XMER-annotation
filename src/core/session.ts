@@ -12,6 +12,7 @@ import type {
   Sample,
   SessionView,
   Task,
+  TracePoint,
 } from "../types";
 import type { AnnotationRepository } from "../storage/repository";
 import { makeSample, Sampler } from "./sampler";
@@ -21,6 +22,13 @@ export class AnnotationSession {
   private media: HTMLMediaElement | null = null;
   private sampler: Sampler;
   private pending: Sample[] = [];
+  /**
+   * 本轮已采的点，只增不减，供界面实时画轨迹。
+   *
+   * 不能用 `pending`——那是待上传队列，checkpoint 成功后会被清掉，
+   * 拿它画图会看到曲线一段段消失。
+   */
+  private trace: TracePoint[] = [];
   private version = 0;
   private savedVersion = 0;
   private saving: Promise<void> | null = null;
@@ -52,6 +60,7 @@ export class AnnotationSession {
       savedAt: null,
       error: null,
       saveError: null,
+      trace: [],
     };
     this.sampler = new Sampler(
       SAMPLE_RATE_HZ,
@@ -79,6 +88,9 @@ export class AnnotationSession {
     this.view = {
       ...this.view,
       attempt: this.view.attempt ? { ...this.view.attempt } : null,
+      // 同一个数组的引用：视图对象本身每次都是新的，React 照常重渲染，
+      // 不必为了画一条线把上千个点复制一遍
+      trace: this.trace,
     };
     this.listeners.forEach((listener) => listener());
   }
@@ -385,6 +397,8 @@ export class AnnotationSession {
     await this.flush();
     this.view.attempt = null;
     this.pending = [];
+    // 换维度就是换一条曲线，上一维的轨迹不能留在图上
+    this.trace = [];
     this.view.dimension = dimension;
     this.view.value = null;
     this.view.rate = this.preferredRate;
@@ -459,6 +473,8 @@ export class AnnotationSession {
       calibration: null,
     };
     this.pending = [];
+    // 重标时旧轨迹作废——图上留着会让人以为那些点还算数
+    this.trace = [];
     this.version++;
     this.sampler.reset();
     this.event("attempt_created");
@@ -494,6 +510,7 @@ export class AnnotationSession {
     )
       return;
     this.pending.push(makeSample(attempt, time, value));
+    this.trace.push({ t: time, v: value });
     attempt.sample_count++;
     attempt.last_media_time = time;
     this.version++;

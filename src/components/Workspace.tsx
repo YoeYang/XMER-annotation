@@ -7,6 +7,7 @@ import type { SyncState } from "../storage/syncingRepository";
 import type { Attempt, Dimension, FlowPage, Submission, Task } from "../types";
 import { MODALITY_LABELS } from "../config";
 import AnnotationPad from "./AnnotationPad";
+import TraceChart from "./TraceChart";
 import MediaPanel from "./MediaPanel";
 
 interface Props {
@@ -225,14 +226,26 @@ export default function Workspace(props: Props) {
       </div>
 
       <div className="annotation-grid">
-        <MediaPanel
-          key={task.task_id}
-          task={task}
-          page={page}
-          session={session}
-          view={view}
-          onReload={props.onReload}
-        />
+        <div className="media-column">
+          <MediaPanel
+            key={task.task_id}
+            task={task}
+            page={page}
+            session={session}
+            view={view}
+            onReload={props.onReload}
+          />
+          {/* 标注者按住拖动时只感觉得到手往哪边挪，看不到画出了什么形状；
+              这条线让人对自己的判断有个整体印象。熟悉页没有轨迹可言。 */}
+          {page !== "familiarization" && (
+            <TraceChart
+              trace={view.trace}
+              duration={view.duration || task.duration}
+              time={view.time}
+              dimension={view.dimension}
+            />
+          )}
+        </div>
         <div className="annotation-column">
           <AnnotationPad
             page={page}

@@ -98,6 +98,12 @@ export type Phase =
   | "buffering"
   | "completed"
   | "error";
+/** 实时轨迹上的一点：媒体时间与当时的取值。 */
+export interface TracePoint {
+  t: number;
+  v: number;
+}
+
 export interface SessionView {
   phase: Phase;
   time: number;
@@ -111,4 +117,6 @@ export interface SessionView {
   savedAt: string | null;
   error: string | null;
   saveError: string | null;
+  /** 本轮已采的点，供界面实时画标注轨迹。 */
+  trace: TracePoint[];
 }

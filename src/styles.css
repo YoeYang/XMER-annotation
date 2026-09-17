@@ -909,3 +909,30 @@ kbd {
   }
 }
 
+
+/* 标注轨迹预览：旁证而非标注对象，画得轻一些，别抢注意力 */
+.media-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.trace-chart {
+  position: relative;
+  margin-top: 0.5rem;
+}
+.trace-chart canvas {
+  display: block;
+  width: 100%;
+  height: 56px;
+  background: var(--surface, #faf9f7);
+  border: 1px solid var(--line, #e5e1d9);
+  border-radius: 6px;
+}
+.trace-hint {
+  position: absolute;
+  right: 8px;
+  bottom: 5px;
+  font-size: 0.68rem;
+  color: var(--muted, #8b8578);
+  pointer-events: none;
+}

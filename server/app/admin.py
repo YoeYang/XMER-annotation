@@ -270,6 +270,14 @@ def list_attempts(
     for flag in session.scalars(select(AttemptFlag).order_by(AttemptFlag.flagged_at)):
         latest_flag[flag.attempt_id] = flag.flag
     tickets = _tickets(session, annotator)
+    attempts = list(session.scalars(query))
+    rounds = _rounds(session, annotator)
+    revisions = {
+        attempt_id: revision
+        for attempt_id, revision in session.execute(select(
+            Submission.attempt_id, Submission.revision
+        ))
+    }
     return [
         {
             "attempt_id": a.attempt_id,
@@ -280,13 +288,49 @@ def list_attempts(
             "modality": a.modality,
             "mode": a.mode,
             "dimension": a.dimension,
+            # 这个人对这条样本这个维度标的第几遍，以及是不是当前有效的那遍
+            "attempt_no": rounds[a.attempt_id][0],
+            "attempt_total": rounds[a.attempt_id][1],
+            "is_current": rounds[a.attempt_id][0] == rounds[a.attempt_id][1],
+            "revision": revisions.get(a.attempt_id),
             "status": a.status,
             "sample_count": a.sample_count,
             "received_at": _iso(a.server_received_at),
             "flag": latest_flag.get(a.attempt_id),
         }
-        for a in session.scalars(query)
+        for a in attempts
     ]
+
+
+def _rounds(
+    session: Session, annotator: str | None
+) -> dict[str, tuple[int, int]]:
+    """轮次 → (这是第几遍, 一共标了几遍)。
+
+    按 `(标注者, 任务, 维度)` 分组、开始时间排序。重标会形成新轮次而不是
+    覆盖旧的，处置时必须分得清哪遍是最新：把当前有效的那遍作废掉，
+    等于把这条样本的数据废了，而想废的往往恰恰是早先那几遍。
+
+    没提交的轮次也编号——否则表上看不出它夹在哪两遍之间。
+    """
+    query = select(
+        Attempt.attempt_id, Attempt.annotator_id, Attempt.task_id,
+        Attempt.dimension, Attempt.started_at,
+    ).where(Attempt.mode == "annotation")
+    if annotator:
+        query = query.where(Attempt.annotator_id == annotator)
+
+    chains: dict[tuple[str, str, str], list[str]] = defaultdict(list)
+    for attempt_id, annotator_id, task_id, dimension, _ in session.execute(
+        query.order_by(Attempt.started_at, Attempt.attempt_id)
+    ):
+        chains[(annotator_id, task_id, dimension)].append(attempt_id)
+
+    out: dict[str, tuple[int, int]] = {}
+    for ids in chains.values():
+        for index, attempt_id in enumerate(ids, start=1):
+            out[attempt_id] = (index, len(ids))
+    return defaultdict(lambda: (1, 1), out)
 
 
 def _tickets(session: Session, annotator: str | None) -> dict[tuple[str, str], str]:

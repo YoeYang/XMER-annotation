@@ -167,7 +167,50 @@ describe("V3 按住标注会话", () => {
     expect(session.view.phase).toBe("ready");
   });
 
-  it("松手暂停媒体，再次按住从同一媒体时刻继续且栅格无空洞", async () => {
+it("实时轨迹跟着采样长出来，上传后仍然完整", async () => {
+    // 轨迹不能用 pending 画——那是待上传队列，checkpoint 成功后会被清掉，
+    // 拿它画图会看到曲线一段段消失
+    const { session, media, repository } = setup();
+    await repository.listAttempts("A001");
+    vi.useFakeTimers();
+    await session.prepareDimension("valence", 2);
+    session.press(0.5);
+    await vi.advanceTimersByTimeAsync(HOLD_START_DELAY_MS);
+    for (let cell = 1; cell <= 12; cell++) {
+      media.currentTime = cell * 0.1 + 0.01;
+      await vi.advanceTimersByTimeAsync(25);
+    }
+    vi.useRealTimers();
+    session.releaseHold();
+
+    const before = session.view.trace.length;
+    expect(before).toBeGreaterThan(5);
+    await session.flush();
+    expect(session.view.trace.length).toBe(before);
+    expect(session.view.trace[0]).toHaveProperty("t");
+    expect(session.view.trace[0]).toHaveProperty("v");
+  });
+
+  it("换维度清空轨迹：上一维的线不能留在图上", async () => {
+    const { session, media, repository } = setup();
+    await repository.listAttempts("A001");
+    vi.useFakeTimers();
+    await session.prepareDimension("valence", 2);
+    session.press(0.5);
+    await vi.advanceTimersByTimeAsync(HOLD_START_DELAY_MS);
+    for (let cell = 1; cell <= 5; cell++) {
+      media.currentTime = cell * 0.1 + 0.01;
+      await vi.advanceTimersByTimeAsync(25);
+    }
+    vi.useRealTimers();
+    session.releaseHold();
+    expect(session.view.trace.length).toBeGreaterThan(0);
+
+    await session.prepareDimension("arousal", 2);
+    expect(session.view.trace).toEqual([]);
+  });
+
+    it("松手暂停媒体，再次按住从同一媒体时刻继续且栅格无空洞", async () => {
     const { session, media, repository } = setup();
     await repository.listAttempts("A001");
     vi.useFakeTimers();
