@@ -135,3 +135,65 @@ docker run --rm -v /opt/xmer-annotation-src:/src -w /src node:20-alpine \
 
 **下一步加固**：Caddy 层给 `/annotation/api/admin/*` 加 IP 白名单作为第二道防线。
 本次未加，以免把自己锁在外面——加之前先确认固定出口 IP。
+
+## V3 上线（2026-09-17）
+
+清库前先核对存档，逐项对上才动手：
+
+| | 存档 | 线上 |
+| --- | --- | --- |
+| 提交 | 269 | 269 |
+| 正式轮次 | 387 | 387 |
+| 采样点 | 23450 | 23450 |
+
+线上 862 个 attempts 里有 475 个是 **preview 轮次**，存档不计——差额来自这里，
+不是漏了数据。另查「存档时间之后有没有新增」：0 条。
+
+顺序（每步都可单独回退）：
+
+```bash
+# 1. 备份：服务器一份 + 拉回 Roihu 一份（带 SHA256）
+docker compose exec -T db pg_dump -U xmer -d xmer_annotation --no-owner \
+  | gzip > backups/xmer_annotation-pre-v3-$(date +%Y%m%d-%H%M).sql.gz
+
+# 2. 清库（保留表结构，V3 第一条迁移的 _guard 会拒绝在旧数据上跑）
+docker compose exec -T db psql -U xmer -d xmer_annotation -c "
+TRUNCATE sample_chunks, submissions, attempt_flags, attempts,
+         assignments, tasks, annotators RESTART IDENTITY CASCADE;"
+
+# 3. 后端代码 + 迁移
+rsync -az --delete --exclude __pycache__ -e "ssh -i ~/.ssh/xmer_ecs" \
+  server/ root@47.238.255.165:/opt/xmer-label/annotation-server/
+docker compose build backend
+docker compose run --rm backend alembic upgrade head
+
+# 4. 素材：传到 annotation-pool/v3/，**不碰旧的 5.6G**
+rsync -a -e "ssh -i ~/.ssh/xmer_ecs" pipeline/face-track/out/upload/ \
+  root@47.238.255.165:/opt/xmer-label/annotation-pool/v3/
+
+# 5. 导入任务清单（编号随清单入库）
+docker compose run --rm -v /opt/xmer-label/tasks_import_v3.json:/data/tasks.json:ro \
+  backend python manage.py import-tasks --file /data/tasks.json
+
+# 6. 前端（Roihu 上用 singularity 构建，比在 ECS 上快）
+VITE_BASE_PATH=/annotation/ singularity exec -B "$PWD:/src" --pwd /src node20.sif npm run build
+rsync -az --delete -e "ssh -i ~/.ssh/xmer_ecs" dist/ \
+  root@47.238.255.165:/opt/xmer-label/annotation-static/
+```
+
+### Caddy 不用改
+
+现有的 `handle_path /annotation/pool/*` → `/annotation-pool` 已经覆盖 `v3/` 子目录，
+素材放进 `annotation-pool/v3/` 就能访问，**不需要改 Caddyfile 也不需要 reload**。
+
+### ⚠️ 迁移在 Postgres 上炸过一次
+
+`HAVING n > 1` 引用 `SELECT` 的别名：**SQLite 接受，Postgres 不接受**。
+本地 133 条测试全绿，一上生产就 `UndefinedColumn`。alembic 整体回滚，
+库没留中间状态，但这类方言差异测试抓不到——**测试跑 SQLite，生产跑 Postgres**。
+写迁移 SQL 时避开别名引用、窗口函数等方言分歧点。
+
+### `VITE_BASE_PATH` 必须设成 `/annotation/`
+
+前端在子路径下，不设的话资源路径会是 `/assets/...`，而 Caddy 的
+`handle_path /annotation*` 匹配不到，整页白屏。
