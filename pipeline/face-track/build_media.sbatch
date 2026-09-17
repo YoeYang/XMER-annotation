@@ -4,7 +4,7 @@
 #SBATCH --partition=small
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=24G
-#SBATCH --time=02:00:00
+#SBATCH --time=00:20:00
 #SBATCH --output=logs/build-%A_%a.out
 #
 # 构建 V3 五模态素材并对齐时长。x86 分区，纯 CPU。
