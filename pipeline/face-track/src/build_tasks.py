@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1] / "out"
 MEDIA_V3 = ROOT / "media_v3"
 TRANSCRIPTS_V3 = ROOT / "transcripts_v3"
 MANIFEST = FRAMES_DIR / "out" / "manifest.jsonl"
+FRAMES = FRAMES_DIR / "out" / "frames"
 DISPLAY_IDS = REPO_ROOT / "server" / "plans" / "display_ids.csv"
 DROPPED = ROOT / "dropped.txt"
 
@@ -102,8 +103,10 @@ def main():
             continue
         duration = rec["duration"]
         speaker = clean_speaker_name(names.get(sid))
-        # 静帧仍在 06 的产物里，部署时随 media_v3 一起同步（见 README）
-        frame = MEDIA_V3 / sid / "speaker.jpg"
+        # 静帧直接读 06 的产物，不在 media_v3 里另存一份——129MB 复制两遍
+        # 只为省一次路径拼接不划算，多一个步骤还多一处会忘记跑的地方。
+        # 上传时由 stage_upload.py 从同一处取。
+        frame = FRAMES / f"{sid}.jpg"
         if not frame.exists():
             missing_frame += 1
         if not (TRANSCRIPTS_V3 / f"{sid}.json").exists():
