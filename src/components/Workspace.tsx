@@ -157,8 +157,17 @@ export default function Workspace(props: Props) {
         )
       ) {
         await session.flush();
-        await repository.submit(current.attempt_id);
+        // 等上传真的到了服务器再刷新列表——不等的话，列表会读到还没收到
+        // 这一条的服务器，侧栏的勾于是不出现，人看到的就是「没保存」
+        const uploaded = repository.submitSynced
+          ? await repository.submitSynced(current.attempt_id)
+          : (await repository.submit(current.attempt_id), true);
         await props.refresh();
+        setNotice(
+          uploaded
+            ? ""
+            : "已保存在本机，恢复网络后会自动上传——可以继续标注。",
+        );
       }
       if (page === "valence") {
         await goToDimension("arousal");
@@ -249,7 +258,7 @@ export default function Workspace(props: Props) {
               {notice ||
                 (view.save === "error"
                   ? "保存失败：" + view.saveError
-                  : "已保存，联网后上传")}
+                  : "已保存在本机，恢复网络后会自动上传。")}
             </p>
           )}
 

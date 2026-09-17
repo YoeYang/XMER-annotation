@@ -145,12 +145,49 @@ export class SyncingRepository implements AnnotationRepository {
     this.enqueue(() => this.remote.checkpoint(snapshot, batch));
   }
   async submit(attemptId: string) {
+    return (await this.push(attemptId)).submission;
+  }
+
+  /**
+   * 标完一个维度就上传，**等它真的到了服务器**再返回。
+   *
+   * 原先是「写本机 → 把上传塞进后台队列 → 立刻返回」。调用方紧接着去
+   * 服务器重读列表，而上传还没到，于是标完了侧栏的勾不出现——人看到的
+   * 就是「没保存」。
+   *
+   * 返回是否上传成功。等待有上限：网断了就转入后台重试，不把人卡在那儿。
+   * 队列串行，所以这一等顺带把前面积压的采样块也送出去了，
+   * 服务器不会遇到「提交先于轮次到达」。
+   */
+  async submitSynced(attemptId: string, timeoutMs = 8000): Promise<boolean> {
+    return (await this.push(attemptId, timeoutMs)).synced;
+  }
+
+  private async push(attemptId: string, timeoutMs = 8000) {
     const submission = await this.local.submit(attemptId);
     // 复用本地生成的编号，重试时服务器视作同一次提交
     this.enqueue(async () => {
       await this.remote.submitWith(attemptId, submission.submission_id);
     });
-    return submission;
+    return { submission, synced: await this.settleWithin(timeoutMs) };
+  }
+
+  /** 等队列排空，超时就算了——后台仍在重试。 */
+  private settleWithin(timeoutMs: number): Promise<boolean> {
+    if (!this.queue.length) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const stop = this.subscribe((state) => {
+        if (state.pending) return;
+        if (timer) clearTimeout(timer);
+        stop();
+        resolve(true);
+      });
+      timer = setTimeout(() => {
+        stop();
+        resolve(false);
+      }, timeoutMs);
+    });
   }
   async recoverInterrupted(annotator: string) {
     await this.local.recoverInterrupted(annotator);
@@ -220,14 +257,41 @@ export class SyncingRepository implements AnnotationRepository {
       return local();
     }
   }
+
+  /**
+   * 两边取并集，以 `key` 去重，本机的优先。
+   *
+   * 只认服务器是不行的：服务器**可达**但某一条还没传上去时，读回来的列表
+   * 缺那一条，界面就会否认人刚做完的事——标完了侧栏的勾不出现。
+   * 本机已经落库是既成事实，界面该认。反过来只认本机也不行，
+   * 换台设备就看不到自己在别处标过的东西。
+   */
+  private async merged<T>(
+    key: (row: T) => string,
+    remote: () => Promise<T[]>,
+    local: () => Promise<T[]>,
+  ): Promise<T[]> {
+    const mine = await local();
+    let theirs: T[] = [];
+    try {
+      theirs = await remote();
+    } catch {
+      return mine;
+    }
+    const seen = new Map(theirs.map((row) => [key(row), row]));
+    for (const row of mine) seen.set(key(row), row);
+    return [...seen.values()];
+  }
   async listAttempts(annotator: string) {
-    return this.preferRemote(
+    return this.merged(
+      (row) => row.attempt_id,
       () => this.remote.listAttempts(annotator),
       () => this.local.listAttempts(annotator),
     );
   }
   async listSubmissions(annotator: string) {
-    return this.preferRemote(
+    return this.merged(
+      (row) => row.submission_id,
       () => this.remote.listSubmissions(annotator),
       () => this.local.listSubmissions(annotator),
     );
