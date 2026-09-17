@@ -26,20 +26,24 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from datapaths import REPO_ROOT  # noqa: E402
+from datapaths import FRAMES_DIR, REPO_ROOT  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1] / "out"
 MEDIA_V3 = ROOT / "media_v3"
 TRANSCRIPTS_V3 = ROOT / "transcripts_v3"
+FRAMES = FRAMES_DIR / "out" / "frames"
 UPLOAD = ROOT / "upload"
 TASKS = ROOT / "tasks_import_v3.json"
 DISPLAY_IDS = REPO_ROOT / "server" / "plans" / "display_ids.csv"
 
-MEDIA_FILES = ("face.mp4", "body.mp4", "audio.m4a", "audiovisual.mp4", "speaker.jpg")
-"""要上传的文件。
+MEDIA_FILES = ("face.mp4", "body.mp4", "audio.m4a", "audiovisual.mp4")
+"""要上传的媒体。
 
 `visual.mp4` **不在其列**：V3 的五个模态里没有它，它只是构建 face/body 的
-中间产物，传上去白占空间。`speaker.jpg` 是说话人静帧，标注时常驻展示。
+中间产物，传上去白占空间。
+
+说话人静帧不在这里——它在 06 的产物目录，与 `build_tasks.py` 同一处来源，
+见下面的 `FRAMES`。
 """
 
 
@@ -75,12 +79,18 @@ def main():
         for name in MEDIA_FILES:
             src = MEDIA_V3 / sid / name
             if not src.exists():
-                # speaker.jpg 本就不是每条都有，缺了只记不报错
-                if name != "speaker.jpg":
-                    missing.append(f"{sid}/{name}")
+                missing.append(f"{sid}/{name}")
                 continue
             if not args.check:
                 modes[link(src, UPLOAD / "media" / code / name)] += 1
+        # 静帧读 06 的产物，与 build_tasks.py 同一来源。缺了要报——
+        # 清单里的 speaker_ref_src 会指向它，少一个就是标注页上一个 404，
+        # 而多人场景里那张图是判断「该看谁」的唯一依据。
+        frame = FRAMES / f"{sid}.jpg"
+        if not frame.exists():
+            missing.append(f"frames/{sid}.jpg")
+        elif not args.check:
+            modes[link(frame, UPLOAD / "media" / code / "speaker.jpg")] += 1
         src = TRANSCRIPTS_V3 / f"{sid}.json"
         if not src.exists():
             missing.append(f"transcripts/{sid}.json")
