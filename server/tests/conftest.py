@@ -15,7 +15,6 @@ from app.main import create_app
 from app.models import Annotator, Assignment, Attempt, Task
 
 
-@event.listens_for(Engine, "connect")
 def _enforce_sqlite_foreign_keys(dbapi_connection, connection_record):
     # SQLite 默认不校验外键，不打开就测不出引用完整性
     if dbapi_connection.__class__.__module__.startswith("sqlite3"):
@@ -33,6 +32,11 @@ def engine() -> Iterator[Engine]:
         poolclass=StaticPool,
         future=True,
     )
+    # 只给应用的测试引擎开，**不要挂到 Engine 基类上**：那会连迁移用的引擎
+    # 一起强开外键，而迁移在生产（Postgres）上走原生 ALTER、根本不重建表。
+    # SQLite 下 alembic 只能建新表搬数据再丢旧表，重建过程中自引用外键
+    # 必然出现中间态——那是模拟手段的产物，不是要测的生产行为。
+    event.listens_for(eng, "connect")(_enforce_sqlite_foreign_keys)
     create_all(eng)
     yield eng
     eng.dispose()

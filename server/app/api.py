@@ -67,6 +67,25 @@ def _own_attempt(session: Session, annotator: Annotator, attempt_id: str) -> Att
     return attempt
 
 
+def _latest_submission(
+    session: Session, annotator: Annotator, attempt: Attempt
+) -> Submission | None:
+    """该标注者在这个子任务的**这个维度**上最近一次提交。
+
+    维度必须进条件。少了它，效价与唤醒会被并进同一条版本链，
+    第二个维度凭空变成第一个维度的修订版。
+    """
+    return session.scalars(
+        select(Submission)
+        .where(
+            Submission.annotator_id == annotator.annotator_id,
+            Submission.task_id == attempt.task_id,
+            Submission.dimension == attempt.dimension,
+        )
+        .order_by(Submission.revision.desc())
+    ).first()
+
+
 @router.get("/me", response_model=MeOut)
 def read_me(
     annotator: Annotator = Depends(current_annotator),
@@ -202,14 +221,8 @@ def submit_attempt(
             status.HTTP_409_CONFLICT, "该轮次尚未标注完成，请播放至结束后再提交。"
         )
 
-    previous = session.scalars(
-        select(Submission)
-        .where(
-            Submission.annotator_id == annotator.annotator_id,
-            Submission.task_id == attempt.task_id,
-        )
-        .order_by(Submission.revision.desc())
-    ).first()
+    # 版本链按**维度**各走各的：效价的上一版是效价，不是刚交的唤醒。
+    previous = _latest_submission(session, annotator, attempt)
 
     now = datetime.now(timezone.utc)
     submission = Submission(
@@ -217,6 +230,7 @@ def submit_attempt(
         task_id=attempt.task_id,
         annotator_id=annotator.annotator_id,
         attempt_id=attempt_id,
+        dimension=attempt.dimension,
         revision=previous.revision + 1 if previous else 1,
         previous_submission_id=previous.submission_id if previous else None,
         submitted_at=now,
@@ -228,14 +242,7 @@ def submit_attempt(
     except IntegrityError:
         # 并发双提交：唯一约束挡下后者，返回先落库的那条
         session.rollback()
-        winner = session.scalars(
-            select(Submission)
-            .where(
-                Submission.annotator_id == annotator.annotator_id,
-                Submission.task_id == attempt.task_id,
-            )
-            .order_by(Submission.revision.desc())
-        ).first()
+        winner = _latest_submission(session, annotator, attempt)
         return SubmissionOut.model_validate(winner)
 
     return SubmissionOut.model_validate(submission)

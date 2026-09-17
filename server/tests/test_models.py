@@ -67,6 +67,7 @@ def test_submission_chain_keeps_history(
         task_id=task.task_id,
         annotator_id=annotator.annotator_id,
         attempt_id=attempt.attempt_id,
+        dimension="valence",
         revision=1,
         submitted_at=NOW,
     )
@@ -78,6 +79,7 @@ def test_submission_chain_keeps_history(
         task_id=task.task_id,
         annotator_id=annotator.annotator_id,
         attempt_id=second_attempt.attempt_id,
+        dimension="valence",
         revision=2,
         previous_submission_id="sub-1",
         submitted_at=NOW,
@@ -230,6 +232,7 @@ def test_one_submission_per_attempt(
                 task_id=task.task_id,
                 annotator_id=annotator.annotator_id,
                 attempt_id=attempt.attempt_id,
+                dimension="valence",
                 revision=revision,
                 submitted_at=NOW,
             )

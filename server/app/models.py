@@ -183,6 +183,11 @@ class Submission(Base):
     attempt_id: Mapped[str] = mapped_column(
         Text, ForeignKey("attempts.attempt_id"), nullable=False
     )
+    # V3：效价与唤醒是**两条独立的链**，像纯视觉与纯语音那样彻底隔开。
+    # 取自轮次自身而非客户端另报一次——两处各报一次迟早对不上。
+    # 没有这一列，交完效价再交唤醒会被记成效价的修订版：
+    # 系统以为标注者改了效价，其实他标的是唤醒。
+    dimension: Mapped[str] = mapped_column(Text, nullable=False)
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     # 版本链：Update 形成新记录并指回上一版，历史轨迹不被覆盖
     previous_submission_id: Mapped[str | None] = mapped_column(
@@ -195,7 +200,11 @@ class Submission(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "annotator_id", "task_id", "revision", name="uq_submissions_revision"
+            "annotator_id", "task_id", "dimension", "revision",
+            name="uq_submissions_revision",
+        ),
+        CheckConstraint(
+            _one_of("dimension", DIMENSIONS), name="ck_submissions_dimension"
         ),
         # 一个轮次只能提交一次；重标要另开轮次，由此形成新版本
         UniqueConstraint("attempt_id", name="uq_submissions_attempt"),

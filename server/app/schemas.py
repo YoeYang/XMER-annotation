@@ -104,6 +104,7 @@ class SubmissionOut(BaseModel):
     task_id: str
     annotator_id: str
     attempt_id: str
+    dimension: str
     revision: int
     previous_submission_id: str | None
     submitted_at: UtcDateTime
