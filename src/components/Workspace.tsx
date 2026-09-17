@@ -7,6 +7,7 @@ import type { SyncState } from "../storage/syncingRepository";
 import type { Attempt, Dimension, FlowPage, Submission, Task } from "../types";
 import { MODALITY_LABELS } from "../config";
 import AnnotationPad from "./AnnotationPad";
+import CloudStatus from "./CloudStatus";
 import MediaPanel from "./MediaPanel";
 
 interface Props {
@@ -157,17 +158,11 @@ export default function Workspace(props: Props) {
         )
       ) {
         await session.flush();
-        // 等上传真的到了服务器再刷新列表——不等的话，列表会读到还没收到
-        // 这一条的服务器，侧栏的勾于是不出现，人看到的就是「没保存」
-        const uploaded = repository.submitSynced
-          ? await repository.submitSynced(current.attempt_id)
-          : (await repository.submit(current.attempt_id), true);
-        await props.refresh();
-        setNotice(
-          uploaded
-            ? ""
-            : "已保存在本机，恢复网络后会自动上传——可以继续标注。",
-        );
+        // 只等本机落库（毫秒级），上传交给后台——等一次网络往返会让
+        // 「下一步」明显卡一下，标一条卡一次。上传进度由云端状态条显示，
+        // 侧栏的勾靠本机与云端的并集列表，都不必挡着人往下走。
+        await repository.submit(current.attempt_id);
+        void props.refresh();
       }
       if (page === "valence") {
         await goToDimension("arousal");
@@ -253,12 +248,13 @@ export default function Workspace(props: Props) {
             }}
           />
 
-          {(notice || view.save === "error" || props.sync?.lastError) && (
+          <CloudStatus sync={props.sync} saveError={
+            view.save === "error" ? view.saveError : null
+          } />
+
+          {notice && (
             <p className="operation-notice" role="status">
-              {notice ||
-                (view.save === "error"
-                  ? "保存失败：" + view.saveError
-                  : "已保存在本机，恢复网络后会自动上传。")}
+              {notice}
             </p>
           )}
 

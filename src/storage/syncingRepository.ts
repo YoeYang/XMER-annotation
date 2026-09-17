@@ -144,8 +144,20 @@ export class SyncingRepository implements AnnotationRepository {
       batch = samples.slice();
     this.enqueue(() => this.remote.checkpoint(snapshot, batch));
   }
+  /**
+   * 提交：本机落库后**立刻返回**，上传交给后台队列。
+   *
+   * 不等上传——那会把「下一步」变成一次网络往返的等待，标一条卡一下。
+   * 界面靠 `getState()` 的同步状态显示传到哪儿了，靠本机与云端的并集
+   * 列表立刻打上勾，两者都不需要阻塞人的操作。
+   */
   async submit(attemptId: string) {
-    return (await this.push(attemptId)).submission;
+    const submission = await this.local.submit(attemptId);
+    // 复用本地生成的编号，重试时服务器视作同一次提交
+    this.enqueue(async () => {
+      await this.remote.submitWith(attemptId, submission.submission_id);
+    });
+    return submission;
   }
 
   /**
@@ -160,16 +172,8 @@ export class SyncingRepository implements AnnotationRepository {
    * 服务器不会遇到「提交先于轮次到达」。
    */
   async submitSynced(attemptId: string, timeoutMs = 8000): Promise<boolean> {
-    return (await this.push(attemptId, timeoutMs)).synced;
-  }
-
-  private async push(attemptId: string, timeoutMs = 8000) {
-    const submission = await this.local.submit(attemptId);
-    // 复用本地生成的编号，重试时服务器视作同一次提交
-    this.enqueue(async () => {
-      await this.remote.submitWith(attemptId, submission.submission_id);
-    });
-    return { submission, synced: await this.settleWithin(timeoutMs) };
+    await this.submit(attemptId);
+    return this.settleWithin(timeoutMs);
   }
 
   /** 等队列排空，超时就算了——后台仍在重试。 */

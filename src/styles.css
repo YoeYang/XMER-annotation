@@ -908,3 +908,42 @@ kbd {
     scroll-behavior: auto !important;
   }
 }
+
+/* 云端同步状态：常驻显示，标注者交出去的东西要看得见去向 */
+.cloud-status {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--muted, #6b7280);
+}
+.cloud-status svg {
+  flex: none;
+}
+.cloud-status.synced {
+  color: #3f7a52;
+}
+.cloud-status.uploading {
+  color: #6b7280;
+}
+.cloud-status.waiting {
+  color: #9a6b20;
+}
+.cloud-status.failed {
+  color: #a33a3a;
+}
+.cloud-status .spin {
+  animation: cloud-spin 1s linear infinite;
+}
+@keyframes cloud-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cloud-status .spin {
+    animation: none;
+  }
+}

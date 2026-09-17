@@ -75,17 +75,33 @@ async function record(db: IndexedDbRepository, attempt: Attempt) {
 }
 
 describe("标完一个维度立刻上传", () => {
-  it("提交返回时，上传已经到了服务器", async () => {
-    const db = local(), remote = fakeRemote();
+  it("提交不等上传，本机一落库就返回", async () => {
+    // 等一次网络往返会让「下一步」明显卡一下，标一条卡一次。
+    // 上传进度交给云端状态条显示，不挡着人往下走。
+    const db = local(), remote = fakeRemote({ slowMs: 300 });
     const sync = new SyncingRepository(db, remote.repository);
     const attempt = fixture();
     await record(db, attempt);
 
-    const result = await sync.submit(attempt.attempt_id);
+    const started = Date.now();
+    await sync.submit(attempt.attempt_id);
+    expect(Date.now() - started).toBeLessThan(200);
 
-    // 提交刚返回就该能在服务器那边看到——不必再等队列
-    expect(remote.seen.submits).toContain(result.submission_id);
-    expect(sync.getState().pending).toBe(0);
+    // 上传确实在后台进行
+    await sync.drain();
+    expect(remote.seen.submits.length).toBe(1);
+  });
+
+  it("本机落库后，界面立刻就能看到这条提交", async () => {
+    const db = local(), remote = fakeRemote({ slowMs: 300 });
+    const sync = new SyncingRepository(db, remote.repository);
+    const attempt = fixture();
+    await record(db, attempt);
+    await sync.submit(attempt.attempt_id);
+
+    // 上传还没完成，但侧栏的勾不能因此不出现
+    const rows = await sync.listSubmissions("A001");
+    expect(rows.map((r) => r.attempt_id)).toContain(attempt.attempt_id);
   });
 
   it("上传成功时 synced 为真，界面据此说「已上传」", async () => {
