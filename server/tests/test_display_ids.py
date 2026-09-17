@@ -6,7 +6,7 @@
 from sqlalchemy.orm import Session
 
 from app.assignments import assign_display_ids
-from app.models import Assignment, Task
+from app.models import Assignment, SampleNumber, Task
 
 MODALITIES = ["face", "body", "audio", "text", "audiovisual"]
 
@@ -28,7 +28,7 @@ def make_samples(session: Session, source_ids: list[str]) -> None:
     session.commit()
 
 
-def test_同一样本四个任务共用一个编号(session: Session) -> None:
+def test_一个样本只发一个编号(session: Session) -> None:
     make_samples(session, [f"meld_dia{i}_utt0" for i in range(5)])
 
     mapping = assign_display_ids(session, seed=20260914)
@@ -42,12 +42,13 @@ def test_同一样本四个任务共用一个编号(session: Session) -> None:
         "S0004",
         "S0005",
     ]
+    # 编号在 sample_numbers 里，一样本一行——`source_id` 的唯一约束
+    # 使「一个样本两个号」在数据库层面就不可能发生
     for source_id in (sid for _, sid in mapping):
-        ids = {
-            task.display_id
-            for task in session.query(Task).filter(Task.source_id == source_id)
-        }
-        assert len(ids) == 1 and ids.pop().startswith("S")
+        rows = session.query(SampleNumber).filter(
+            SampleNumber.source_id == source_id
+        ).all()
+        assert len(rows) == 1 and rows[0].display_id.startswith("S")
 
 
 def test_编号顺序被打乱_不按数据集聚集(session: Session) -> None:

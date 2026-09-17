@@ -1,9 +1,9 @@
 """导入任务清单时，编号只补不改。
 
 V3 的清单里 `task_id` / `media_id` / `src` 全用编号写成，编号本身也随清单
-一起进库。要是导入时把 `display_id` 留空，之后跑 `assign-display-ids`
-会把这些样本当成没编号而重新发号——`task_id` 写着 S0123、编号却成了 S0456，
-标注结果从此对不上样本。这批测试把这条路堵死。
+进 `sample_numbers`——那是唯一一套编号表。要是导入时把 `display_id` 丢掉，
+之后跑 `assign-display-ids` 会把这些样本当成没编号而重新发号：
+`task_id` 写着 S0123、编号却成了 S0456，标注结果从此对不上样本。
 """
 import json
 
@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 import manage
-from app.models import Task
+from app.models import SampleNumber
 
 
 def manifest(task_id="S0001::face", **kw):
@@ -62,7 +62,7 @@ class _Ctx:
 
 def test_display_id_comes_in_with_the_manifest(session: Session, importer):
     importer(manifest())
-    assert session.get(Task, "S0001::face").display_id == "S0001"
+    assert session.get(SampleNumber, "S0001").source_id == "meld_dia17_utt6"
 
 
 def test_existing_number_is_never_overwritten(session: Session, importer):
@@ -70,9 +70,10 @@ def test_existing_number_is_never_overwritten(session: Session, importer):
     importer(manifest())
     importer(manifest(title="改过的标题", display_id=None))
 
-    row = session.get(Task, "S0001::face")
-    assert row.display_id == "S0001"
-    assert row.title == "改过的标题", "其他字段照常更新"
+    assert session.get(SampleNumber, "S0001").source_id == "meld_dia17_utt6"
+    from app.models import Task
+
+    assert session.get(Task, "S0001::face").title == "改过的标题", "其他字段照常更新"
 
 
 def test_conflicting_number_stops_the_import(session: Session, importer):
@@ -83,9 +84,20 @@ def test_conflicting_number_stops_the_import(session: Session, importer):
     assert "编号冲突" in str(caught.value)
 
 
+def test_a_number_already_taken_cannot_be_given_to_another_sample(
+    session: Session, importer
+):
+    """同一个号发给第二个样本，是编号体系里最坏的一种错——必须当场拦下。"""
+    importer(manifest())
+    with pytest.raises(SystemExit) as caught:
+        importer(manifest(task_id="S0001::body", modality="body",
+                          source_id="另一个样本"))
+    assert "已经属于" in str(caught.value)
+
+
 def test_manifest_without_numbers_still_imports(session: Session, importer):
     """老格式的清单（不带编号）照样能导，编号留给 assign-display-ids 去发。"""
     item = manifest(task_id="legacy::face")[0]
     del item["display_id"]
     importer([item])
-    assert session.get(Task, "legacy::face").display_id is None
+    assert session.query(SampleNumber).count() == 0

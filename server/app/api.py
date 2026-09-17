@@ -8,7 +8,15 @@ from sqlalchemy.orm import Session
 from .auth import current_annotator, get_session
 from .config import MODALITIES
 from .export import assemble_samples, build_export
-from .models import Annotator, Assignment, Attempt, SampleChunk, Submission, Task
+from .models import (
+    Annotator,
+    Assignment,
+    Attempt,
+    SampleChunk,
+    SampleNumber,
+    Submission,
+    Task,
+)
 from .schemas import (
     AttemptIn,
     AttemptOut,
@@ -31,17 +39,19 @@ MODALITY_RANK = case(
 )
 
 
-def _task_out(task: Task, order_index: int) -> TaskOut:
+def _task_out(task: Task, order_index: int, display_id: str | None) -> TaskOut:
     """把任务和它在这位标注者队列里的位置拼成一条下发记录。
 
     字段从 TaskOut 的定义反查，不手抄一遍——手抄的那份迟早和 schema 漂移。
+    编号来自 `sample_numbers`（那是唯一一套），随查询连出来传进这里。
     """
+    derived = {"order_index", "display_id"}
     fields = {
         name: getattr(task, name)
         for name in TaskOut.model_fields
-        if name != "order_index"
+        if name not in derived
     }
-    return TaskOut(**fields, order_index=order_index)
+    return TaskOut(**fields, order_index=order_index, display_id=display_id)
 
 
 def _assigned_task(session: Session, annotator: Annotator, task_id: str) -> Task:
@@ -93,9 +103,12 @@ def read_me(
 ) -> MeOut:
     # order_index 挂在 assignments 上而不是 tasks 上——同一个任务分给不同的人，
     # 队列位置本来就不同。所以要连着取出来，再拼进 TaskOut。
+    # 编号走外连接：没发号的样本照常下发，只是目录里没有编号可显示，
+    # 比整条任务凭空消失容易察觉得多。
     rows = session.execute(
-        select(Task, Assignment.order_index)
+        select(Task, Assignment.order_index, SampleNumber.display_id)
         .join(Assignment, Assignment.task_id == Task.task_id)
+        .outerjoin(SampleNumber, SampleNumber.source_id == Task.source_id)
         .where(
             Assignment.annotator_id == annotator.annotator_id,
             Assignment.phase == annotator.phase,
@@ -106,7 +119,10 @@ def read_me(
         annotator_id=annotator.annotator_id,
         display_name=annotator.display_name,
         phase=annotator.phase,
-        tasks=[_task_out(task, order_index) for task, order_index in rows],
+        tasks=[
+            _task_out(task, order_index, display_id)
+            for task, order_index, display_id in rows
+        ],
     )
 
 

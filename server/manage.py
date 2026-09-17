@@ -23,6 +23,7 @@ from sqlalchemy import delete, func, select
 from app.allocation import AllocationShortfall, audit, build_plan
 from app.assignments import (
     assign_display_ids,
+    issue_numbers,
     replace_assignments,
     tasks_by_sample_modality,
 )
@@ -35,6 +36,7 @@ from app.models import (
     Attempt,
     AttemptFlag,
     SampleChunk,
+    SampleNumber,
     Submission,
     Task,
 )
@@ -107,9 +109,10 @@ def cmd_create_annotators(args):
 def cmd_import_tasks(args):
     """导入任务定义。`-` 表示从标准输入读，格式同 public/tasks.json。
 
-    清单可以带 `display_id`（V3 的清单就带）。**编号一旦入库就不再改动**：
-    重发的编号会让先前提交的结果对到错的样本上，所以清单和库里对不上时
-    直接停下来，而不是以哪一边为准。
+    清单可以带 `display_id`（V3 的清单就带），编号写进 `sample_numbers`
+    那张唯一的编号表。**编号一旦入库就不再改动**：重发的编号会让先前
+    提交的结果对到错的样本上，所以清单和库里对不上时直接停下来，
+    而不是以哪一边为准。
     """
     raw = sys.stdin.read() if args.file == "-" else Path(args.file).read_text("utf-8")
     payload = json.loads(raw)
@@ -117,14 +120,30 @@ def cmd_import_tasks(args):
     factory = session_factory()
     added = updated = 0
     with factory() as session:
+        numbered = {
+            source_id: display_id
+            for display_id, source_id in session.execute(
+                select(SampleNumber.display_id, SampleNumber.source_id)
+            )
+        }
         for item in payload:
             row = session.get(Task, item["task_id"])
-            code = item.get("display_id")
-            if row is not None and row.display_id and code and code != row.display_id:
+            code, source_id = item.get("display_id"), item["source_id"]
+            known = numbered.get(source_id)
+            if known and code and code != known:
                 raise SystemExit(
-                    f"{item['task_id']} 的编号冲突：库里是 {row.display_id}，"
-                    f"清单写的是 {code}。编号发出去就不能改，先查清来源。"
+                    f"{source_id} 的编号冲突：库里是 {known}，清单写的是 {code}。"
+                    "编号发出去就不能改，先查清来源。"
                 )
+            if code and not known:
+                taken = session.get(SampleNumber, code)
+                if taken is not None:
+                    raise SystemExit(
+                        f"编号 {code} 已经属于 {taken.source_id}，"
+                        f"不能再发给 {source_id}。"
+                    )
+                session.add(SampleNumber(display_id=code, source_id=source_id))
+                numbered[source_id] = code
             fields = dict(
                 media_id=item["media_id"],
                 source_id=item["source_id"],
@@ -139,14 +158,11 @@ def cmd_import_tasks(args):
                 speaker_name=item.get("speaker_name"),
             )
             if row is None:
-                session.add(Task(task_id=item["task_id"], display_id=code, **fields))
+                session.add(Task(task_id=item["task_id"], **fields))
                 added += 1
             else:
                 for key, value in fields.items():
                     setattr(row, key, value)
-                # 已有编号只补不改：上面已经挡掉了不一致的情况
-                if code and not row.display_id:
-                    row.display_id = code
                 updated += 1
         session.commit()
     print(f"任务导入完成：新增 {added}，更新 {updated}")
@@ -313,11 +329,21 @@ def cmd_drop_annotator(args):
 def cmd_assign_display_ids(args):
     """给样本发放对标注者可见的不透明编号，并导出映射表。
 
-    映射表是**唯一**能把 S0001 还原回 meld_dia762_utt2 的东西，
-    分析阶段离不开它，务必随实验数据一起留存。
+    编号存在 `sample_numbers` 里——那是**唯一**一套表，一一对应由主键与
+    唯一约束保证。导出的 CSV 是它的快照，也是分析阶段把 S0001 还原回
+    meld_dia762_utt2 的唯一凭据，务必随实验数据一起留存。
+
+    `--start` 给一批样本另起号段：备份池从 S3500 起发，与主池的
+    S0001–S3441 隔开一段，两批数据一眼能分辨，也不可能撞号。
     """
     factory = session_factory()
     with factory() as session:
+        if args.start:
+            source_ids = list(session.scalars(select(Task.source_id).distinct()))
+            fresh = issue_numbers(
+                session, source_ids, start=args.start, seed=args.seed
+            )
+            print(f"本次新发 {len(fresh)} 个编号，起自 S{args.start:04d}")
         mapping = assign_display_ids(session, seed=args.seed)
         session.commit()
         live = set(session.scalars(select(Task.source_id).distinct()))
@@ -460,6 +486,12 @@ def main():
     display = sub.add_parser("assign-display-ids", help="发放样本编号并导出映射表")
     display.add_argument("--seed", type=int, default=20260914)
     display.add_argument("--out", default="display_ids.csv")
+    display.add_argument(
+        "--start",
+        type=int,
+        default=0,
+        help="新样本从这个号起发（备份池用 3500）。0 表示接着当前最大号。",
+    )
     display.set_defaults(func=cmd_assign_display_ids)
 
     reissue = sub.add_parser("reissue-token", help="给已有账号换新令牌，数据保留")

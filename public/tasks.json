@@ -9,8 +9,7 @@
     "demo": true,
     "timeline_origin": 0,
     "speaker_ref_src": null,
-    "speaker_name": null,
-    "display_id": "S0001"
+    "speaker_name": null
   },
   {
     "task_id": "DEMO-002",
@@ -22,8 +21,7 @@
     "demo": true,
     "timeline_origin": 0,
     "speaker_ref_src": null,
-    "speaker_name": null,
-    "display_id": "S0001"
+    "speaker_name": null
   },
   {
     "task_id": "DEMO-003",
@@ -35,8 +33,7 @@
     "demo": true,
     "timeline_origin": 0,
     "speaker_ref_src": null,
-    "speaker_name": null,
-    "display_id": "S0001"
+    "speaker_name": null
   },
   {
     "task_id": "DEMO-004",
@@ -48,8 +45,7 @@
     "demo": true,
     "timeline_origin": 0,
     "speaker_ref_src": null,
-    "speaker_name": null,
-    "display_id": "S0001"
+    "speaker_name": null
   },
   {
     "task_id": "EXAMPLE-001",
@@ -61,8 +57,7 @@
     "demo": false,
     "timeline_origin": 0,
     "speaker_ref_src": "/media/example/speaker.jpg",
-    "speaker_name": "Phoebe",
-    "display_id": "S0002"
+    "speaker_name": "Phoebe"
   },
   {
     "task_id": "EXAMPLE-002",
@@ -74,8 +69,7 @@
     "demo": false,
     "timeline_origin": 0,
     "speaker_ref_src": "/media/example/speaker.jpg",
-    "speaker_name": "Phoebe",
-    "display_id": "S0002"
+    "speaker_name": "Phoebe"
   },
   {
     "task_id": "EXAMPLE-003",
@@ -87,8 +81,7 @@
     "demo": false,
     "timeline_origin": 0,
     "speaker_ref_src": "/media/example/speaker.jpg",
-    "speaker_name": "Phoebe",
-    "display_id": "S0002"
+    "speaker_name": "Phoebe"
   },
   {
     "task_id": "EXAMPLE-004",
@@ -100,7 +93,6 @@
     "demo": false,
     "timeline_origin": 0,
     "speaker_ref_src": "/media/example/speaker.jpg",
-    "speaker_name": "Phoebe",
-    "display_id": "S0002"
+    "speaker_name": "Phoebe"
   }
 ]

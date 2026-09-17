@@ -11,44 +11,76 @@ import random
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from .models import Assignment, Task
+from .models import Assignment, SampleNumber, Task
+
+
+def _next_number(session: Session, start: int) -> int:
+    """下一个可用的号。已发出的号一律绕开，包括退役的。"""
+    used = [
+        int(value[1:])
+        for (value,) in session.execute(select(SampleNumber.display_id))
+        if value[1:].isdigit()
+    ]
+    highest = max(used, default=0)
+    if start and start <= highest:
+        raise ValueError(
+            f"起始号 S{start:04d} 落在已发出的号段内（最大已发 S{highest:04d}）。"
+            "编号只发不收，从更大的号起发，或不指定起始号自动接续。"
+        )
+    return start if start else highest + 1
+
+
+def issue_numbers(
+    session: Session, source_ids: list[str], start: int = 0, seed: int = 0
+) -> list[tuple[str, str]]:
+    """给还没有号的样本发号，返回本次新发的 [(display_id, source_id)]。
+
+    发号顺序是**打乱**的：按 source_id 字母序发号的话，S0001–S0917 就全是
+    chsims、往后整段是 iemocap，标注者从编号区间就能猜出数据来源和样本聚集。
+
+    `start` 用来给一批样本另起号段（备份池从 S3500 起发，与主池的
+    S0001–S3441 隔开一眼能分辨）。已经有号的样本原样不动。
+    """
+    taken = set(session.scalars(select(SampleNumber.source_id)))
+    fresh = sorted(set(source_ids) - taken)
+    if not fresh:
+        return []
+
+    number = _next_number(session, start)
+    random.Random(seed).shuffle(fresh)
+    issued = []
+    for offset, source_id in enumerate(fresh):
+        display_id = f"S{number + offset:04d}"
+        session.add(SampleNumber(display_id=display_id, source_id=source_id))
+        issued.append((display_id, source_id))
+    return issued
 
 
 def assign_display_ids(session: Session, seed: int) -> list[tuple[str, str]]:
-    """给还没有编号的样本发放 display_id，返回 [(display_id, source_id)] 全量映射。
+    """给库里所有还没编号的样本发号，返回 [(display_id, source_id)] 全量映射。
 
-    编号顺序是**打乱**的：若按 source_id 字母序发号，S0001–S0917 就全是
-    chsims、往后整段是 iemocap，标注者从编号区间就能猜出数据来源和样本聚集。
     已有编号的样本绝不改动——编号一旦发给标注者就不能变，否则先前提交的
     结果对不上样本；增量导入的新样本从当前最大号往后接。
     """
-    existing: dict[str, str] = {}
-    pending: set[str] = set()
-    for source_id, display_id in session.execute(
-        select(Task.source_id, Task.display_id).distinct()
-    ):
-        if display_id:
-            existing[source_id] = display_id
-        else:
-            pending.add(source_id)
-    pending -= existing.keys()
-
-    next_number = 1 + max(
-        (int(value[1:]) for value in existing.values() if value[1:].isdigit()),
-        default=0,
-    )
-    fresh = sorted(pending)
-    random.Random(seed).shuffle(fresh)
-    for offset, source_id in enumerate(fresh):
-        existing[source_id] = f"S{next_number + offset:04d}"
-
-    for source_id in fresh:
-        session.execute(
-            Task.__table__.update()
-            .where(Task.source_id == source_id)
-            .values(display_id=existing[source_id])
+    source_ids = list(session.scalars(select(Task.source_id).distinct()))
+    issue_numbers(session, source_ids, seed=seed)
+    session.flush()
+    return sorted(
+        (display_id, source_id)
+        for display_id, source_id in session.execute(
+            select(SampleNumber.display_id, SampleNumber.source_id)
         )
-    return sorted((display_id, sid) for sid, display_id in existing.items())
+    )
+
+
+def numbers_by_sample(session: Session) -> dict[str, str]:
+    """source_id → display_id。下发任务时用它补上编号。"""
+    return {
+        source_id: display_id
+        for display_id, source_id in session.execute(
+            select(SampleNumber.display_id, SampleNumber.source_id)
+        )
+    }
 
 
 def tasks_by_sample_modality(session: Session) -> dict[tuple[str, str], str]:

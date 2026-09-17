@@ -55,10 +55,6 @@ class Task(Base):
     task_id: Mapped[str] = mapped_column(Text, primary_key=True)
     media_id: Mapped[str] = mapped_column(Text, nullable=False)
     source_id: Mapped[str] = mapped_column(Text, nullable=False)
-    # 给标注者看的不透明编号（S0001…），同一样本的四个任务共用一个。
-    # 目录里出现 meld / iemocap 这类名字会透露数据来源，也会让人对样本先入为主。
-    # 由 manage.py assign-display-ids 填充，映射表只留在后台 CSV 里。
-    display_id: Mapped[str | None] = mapped_column(Text, index=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     modality: Mapped[str] = mapped_column(Text, nullable=False)
     src: Mapped[str] = mapped_column(Text, nullable=False)
@@ -72,6 +68,36 @@ class Task(Base):
 
     __table_args__ = (
         CheckConstraint(_one_of("modality", MODALITIES), name="ck_tasks_modality"),
+    )
+
+
+class SampleNumber(Base):
+    """样本编号：标注者看得到的 S0001，与原始样本一一对应。
+
+    **这是编号的唯一一套表。** 从前编号是 `tasks.display_id` 上的一个普通列，
+    同一样本的五个任务各存一份——数据库拦不住「S0001 同时挂在两个样本上」，
+    也拦不住「一个样本有两个号」，全靠约定维持，而约定被某次导入捅破了
+    （前端演示数据 `public/tasks.json` 里的 DEMO 就占着正式表的 S0001）。
+    现在主键管编号不重复、唯一约束管样本不重号，两条都由数据库兜底。
+
+    编号**只发不收**：样本退出池子时保留原号并标 `retired`，空出来的号
+    绝不重新发给新样本——老编号指向新样本的话，先前提交的结果会静悄悄
+    对到错的样本上，而数据看起来毫无异样。
+    """
+
+    __tablename__ = "sample_numbers"
+
+    display_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    source_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            _one_of("status", ("active", "retired")), name="ck_sample_numbers_status"
+        ),
     )
 
 
