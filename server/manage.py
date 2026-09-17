@@ -25,6 +25,7 @@ from app.allocation import AllocationShortfall, audit, build_plan
 from app.assignments import (
     assign_display_ids,
     issue_numbers,
+    purge_annotator,
     replace_assignments,
     tasks_by_sample_modality,
 )
@@ -306,25 +307,13 @@ def cmd_seed_e2e(args):
 
 
 def cmd_drop_annotator(args):
-    """删除标注者及其全部数据。e2e 收尾用。"""
+    """删除标注者及其全部数据。与管理端共用 purge_annotator，删法只有一份。"""
     factory = session_factory()
     with factory() as session:
-        attempts = [a for a in session.scalars(
-            select(Attempt).where(Attempt.annotator_id == args.annotator_id))]
-        ids = [a.attempt_id for a in attempts]
-        if ids:
-            session.execute(delete(AttemptFlag).where(AttemptFlag.attempt_id.in_(ids)))
-            session.execute(delete(SampleChunk).where(SampleChunk.attempt_id.in_(ids)))
-        session.execute(delete(Submission).where(
-            Submission.annotator_id == args.annotator_id))
-        session.execute(delete(Attempt).where(
-            Attempt.annotator_id == args.annotator_id))
-        session.execute(delete(Assignment).where(
-            Assignment.annotator_id == args.annotator_id))
-        session.execute(delete(Annotator).where(
-            Annotator.annotator_id == args.annotator_id))
+        removed = purge_annotator(session, args.annotator_id)
         session.commit()
-    print(f"已删除 {args.annotator_id} 及其全部数据")
+    detail = "，".join(f"{k} {v}" for k, v in removed.items() if v)
+    print(f"已删除 {args.annotator_id} 及其全部数据（{detail or '无产出数据'}）")
 
 
 def cmd_assign_display_ids(args):

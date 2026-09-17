@@ -11,7 +11,16 @@ import random
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from .models import Assignment, SampleNumber, Task
+from .models import (
+    Annotator,
+    Assignment,
+    Attempt,
+    AttemptFlag,
+    SampleChunk,
+    SampleNumber,
+    Submission,
+    Task,
+)
 
 
 def _next_number(session: Session, start: int) -> int:
@@ -161,3 +170,44 @@ def clean_speaker_name(raw: str | None) -> str | None:
         return None
     stem = name.rstrip("0123456789").strip().lower()
     return None if stem in _PLACEHOLDER_NAMES else name
+
+
+def purge_annotator(session: Session, annotator_id: str) -> dict[str, int]:
+    """删掉一个账号及其产出的一切，返回各表删了多少行。
+
+    **不可恢复**：轮次、采样、提交、处置标记、分配、账号本身，全部清掉。
+    删除顺序从叶到根，外键才不会挡路。
+
+    管理端与 `manage.py drop-annotator` 共用这一份——两处各写一套的话，
+    迟早有一处漏删某张表，留下指向已删账号的孤儿行。
+    """
+    attempt_ids = list(
+        session.scalars(
+            select(Attempt.attempt_id).where(Attempt.annotator_id == annotator_id)
+        )
+    )
+    removed = {
+        "attempt_flags": 0,
+        "sample_chunks": 0,
+        "submissions": 0,
+        "attempts": 0,
+        "assignments": 0,
+    }
+    if attempt_ids:
+        removed["attempt_flags"] = session.execute(
+            delete(AttemptFlag).where(AttemptFlag.attempt_id.in_(attempt_ids))
+        ).rowcount
+        removed["sample_chunks"] = session.execute(
+            delete(SampleChunk).where(SampleChunk.attempt_id.in_(attempt_ids))
+        ).rowcount
+    removed["submissions"] = session.execute(
+        delete(Submission).where(Submission.annotator_id == annotator_id)
+    ).rowcount
+    removed["attempts"] = session.execute(
+        delete(Attempt).where(Attempt.annotator_id == annotator_id)
+    ).rowcount
+    removed["assignments"] = session.execute(
+        delete(Assignment).where(Assignment.annotator_id == annotator_id)
+    ).rowcount
+    session.execute(delete(Annotator).where(Annotator.annotator_id == annotator_id))
+    return removed

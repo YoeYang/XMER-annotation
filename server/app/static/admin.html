@@ -43,6 +43,8 @@
     white-space: nowrap; }
   td { padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
   tr:last-child td { border-bottom: none; }
+  button.danger { color: #a33a3a; border-color: #e0bcbc; }
+  button.danger:hover { background: #fdf2f2; border-color: #c98686; }
   .num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
   .prog { display: flex; align-items: center; gap: 9px; min-width: 150px; }
   .track { flex: 1; height: 6px; background: #e7edf3; border-radius: 3px; overflow: hidden; }
@@ -109,8 +111,8 @@
       <button id="la">载入轮次</button>
     </div>
     <div class="scroll"><table>
-      <thead><tr><th>轮次</th><th>标注者</th><th>任务</th><th>模态</th>
-        <th class="num">采样</th><th>状态</th><th>处置</th><th></th></tr></thead>
+      <thead><tr><th>轮次</th><th>标注者</th><th>他看到的</th><th>任务</th><th>模态</th>
+        <th>维度</th><th class="num">采样</th><th>状态</th><th>处置</th><th></th></tr></thead>
       <tbody id="arows"></tbody>
     </table></div>
     <p class="note">作废只是追加一条处置记录，原始轨迹保留——判断错了还能翻案。</p>
@@ -180,7 +182,8 @@ async function load() {
         <td><div class="prog"><div class="track"><div class="fill" style="width:${pct}%"></div></div>
             <span class="num">${pct}%</span></div></td>
         <td>${seen}</td>
-        <td><button data-who="${r.annotator_id}">导出</button></td>
+        <td><button data-who="${r.annotator_id}">导出</button>
+            <button class="danger" data-del="${r.annotator_id}">删除</button></td>
       </tr>`;
     }).join("");
     $("stamp").textContent = "更新于 " +
@@ -208,6 +211,18 @@ async function post(path, payload) {
   return response.json();
 }
 
+async function del(path) {
+  const response = await fetch("." + path, {
+    method: "DELETE",
+    headers: { authorization: "Bearer " + token() },
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    throw new Error((detail && detail.detail) || "请求失败（" + response.status + "）");
+  }
+  return response.json();
+}
+
 $("mk").addEventListener("click", async () => {
   try {
     const data = await post("/annotators", {
@@ -227,22 +242,48 @@ $("mk").addEventListener("click", async () => {
 });
 
 const FLAGS = { ok: "正常", low_quality: "质量存疑", void: "已作废" };
+const MOD = { face: "面部", body: "身体", audio: "仅音频", text: "仅文本",
+              audiovisual: "完整视频" };
+const DIM = { valence: "效价", arousal: "唤醒" };
 async function loadAttempts() {
   try {
     const who = $("who").value.trim();
     const rows = await api("/attempts" + (who ? "?annotator=" + who : ""));
     $("arows").innerHTML = rows.map((r) => `<tr>
       <td><code>${r.attempt_id.slice(0, 8)}</code></td>
-      <td>${r.annotator_id}</td><td>${r.task_id}</td><td>${r.modality}</td>
+      <td>${r.annotator_id}</td>
+      <td><strong>${r.ticket || "—"}</strong></td>
+      <td>${r.task_id}</td><td>${MOD[r.modality] || r.modality}</td>
+      <td>${DIM[r.dimension] || r.dimension || "—"}</td>
       <td class="num">${r.sample_count}</td><td>${r.status}</td>
       <td>${r.flag ? FLAGS[r.flag] || r.flag : "<span class='idle'>—</span>"}</td>
       <td><button data-flag="void" data-att="${r.attempt_id}">作废</button>
           <button data-flag="low_quality" data-att="${r.attempt_id}">存疑</button>
           <button data-flag="ok" data-att="${r.attempt_id}">正常</button></td>
-    </tr>`).join("") || "<tr><td colspan='8' class='idle'>暂无轮次</td></tr>";
+    </tr>`).join("") || "<tr><td colspan='10' class='idle'>暂无轮次</td></tr>";
   } catch (e) { fail(e.message); }
 }
 $("la").addEventListener("click", loadAttempts);
+$("rows").addEventListener("click", async (e) => {
+  const who = e.target.dataset && e.target.dataset.del;
+  if (!who) return;
+  // 不可恢复，所以要求把账号编号原样打一遍——点错行的代价是别人几十小时的标注
+  const typed = prompt(
+    "删除 " + who + " 的账号与全部标注数据。\n" +
+    "轮次、采样、提交一并清除，无法恢复。\n\n" +
+    "确认请输入账号编号：");
+  if (typed === null) return;
+  if (typed.trim() !== who) { fail("输入与账号编号不一致，已取消。"); return; }
+  try {
+    const out = await del("/annotators/" + encodeURIComponent(who) +
+                          "?confirm=" + encodeURIComponent(who));
+    const n = Object.entries(out.removed)
+      .filter(([, v]) => v).map(([k, v]) => k + " " + v).join("，");
+    fail("已删除 " + who + "（" + (n || "无产出数据") + "）");
+    load();
+  } catch (err) { fail(err.message); }
+});
+
 $("arows").addEventListener("click", async (e) => {
   const att = e.target.dataset && e.target.dataset.att;
   if (!att) return;
@@ -259,6 +300,7 @@ $("rows").addEventListener("click", async (e) => {
   catch (err) { fail(err.message); }
 });
 if (token()) load();
+
 </script>
 </body>
 </html>

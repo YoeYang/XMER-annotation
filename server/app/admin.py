@@ -1,4 +1,5 @@
 import secrets
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
@@ -7,12 +8,24 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .assignments import replace_assignments, tasks_by_sample_modality
+from .assignments import (
+    purge_annotator,
+    replace_assignments,
+    tasks_by_sample_modality,
+)
 from .auth import get_session, hash_token, new_token
 from .export import build_export
 from .completion import completed_counts
-from .models import Annotator, Assignment, Attempt, AttemptFlag, Submission
-from .config import PHASES
+from .models import (
+    Annotator,
+    Assignment,
+    Attempt,
+    AttemptFlag,
+    SampleNumber,
+    Submission,
+    Task,
+)
+from .config import MODALITIES, PHASES
 from .timeutils import to_utc_iso
 
 router = APIRouter(prefix="/api/admin")
@@ -256,13 +269,17 @@ def list_attempts(
     latest_flag = {}
     for flag in session.scalars(select(AttemptFlag).order_by(AttemptFlag.flagged_at)):
         latest_flag[flag.attempt_id] = flag.flag
+    tickets = _tickets(session, annotator)
     return [
         {
             "attempt_id": a.attempt_id,
             "annotator_id": a.annotator_id,
             "task_id": a.task_id,
+            # 标注者侧栏上看到的编号，报问题时用得上
+            "ticket": tickets.get((a.annotator_id, a.task_id)),
             "modality": a.modality,
             "mode": a.mode,
+            "dimension": a.dimension,
             "status": a.status,
             "sample_count": a.sample_count,
             "received_at": _iso(a.server_received_at),
@@ -270,6 +287,59 @@ def list_attempts(
         }
         for a in session.scalars(query)
     ]
+
+
+def _tickets(session: Session, annotator: str | None) -> dict[tuple[str, str], str]:
+    """(标注者, 任务) → 标注者侧栏上看到的编号，如 `S1-5`。
+
+    那是「第 1 个模态块的第 5 条」这样的位置标签：不含样本身份，
+    **而且每个人的 S1-5 是不同样本**——队列各自打乱过。所以必须连
+    标注者一起算，不能只按任务查。
+
+    位置按该标注者队列里同模态任务的 `order_index` 先后数，
+    与前端算块内序号是同一套规则；两边对不上的话，查出来的会是另一条。
+    """
+    query = select(Assignment.annotator_id, Assignment.task_id, Task.modality).join(
+        Task, Task.task_id == Assignment.task_id
+    )
+    if annotator:
+        query = query.where(Assignment.annotator_id == annotator)
+    rows = session.execute(query.order_by(Assignment.order_index)).all()
+
+    seen: Counter[tuple[str, str]] = Counter()
+    out: dict[tuple[str, str], str] = {}
+    for annotator_id, task_id, modality in rows:
+        seen[(annotator_id, modality)] += 1
+        block = MODALITIES.index(modality) + 1 if modality in MODALITIES else 0
+        out[(annotator_id, task_id)] = f"S{block}-{seen[(annotator_id, modality)]}"
+    return out
+
+
+@router.delete("/annotators/{annotator_id}", dependencies=[Depends(require_admin)])
+def delete_annotator(
+    annotator_id: str, confirm: str, session: Session = Depends(get_session)
+) -> dict:
+    """删除标注者及其全部数据。**不可恢复。**
+
+    `confirm` 必须与 `annotator_id` 一致：点错一行就删掉别人几十小时的
+    标注，这道门槛挡的就是这个。UI 那边再加一次弹窗确认。
+
+    删法与 `manage.py drop-annotator` 共用同一个函数——两处各写一套的话，
+    迟早有一处漏删某张表，留下指向已删账号的孤儿行。
+    """
+    if confirm != annotator_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"确认参数与要删除的账号不一致（收到 {confirm!r}）。",
+        )
+    if session.get(Annotator, annotator_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "找不到该标注者。")
+    removed = purge_annotator(session, annotator_id)
+    session.commit()
+    return {"annotator_id": annotator_id, "removed": removed}
+
+
+
 
 
 @router.post("/attempts/{attempt_id}/flags", dependencies=[Depends(require_admin)])
