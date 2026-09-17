@@ -105,7 +105,12 @@ def cmd_create_annotators(args):
 
 
 def cmd_import_tasks(args):
-    """导入任务定义。`-` 表示从标准输入读，格式同 public/tasks.json。"""
+    """导入任务定义。`-` 表示从标准输入读，格式同 public/tasks.json。
+
+    清单可以带 `display_id`（V3 的清单就带）。**编号一旦入库就不再改动**：
+    重发的编号会让先前提交的结果对到错的样本上，所以清单和库里对不上时
+    直接停下来，而不是以哪一边为准。
+    """
     raw = sys.stdin.read() if args.file == "-" else Path(args.file).read_text("utf-8")
     payload = json.loads(raw)
 
@@ -114,6 +119,12 @@ def cmd_import_tasks(args):
     with factory() as session:
         for item in payload:
             row = session.get(Task, item["task_id"])
+            code = item.get("display_id")
+            if row is not None and row.display_id and code and code != row.display_id:
+                raise SystemExit(
+                    f"{item['task_id']} 的编号冲突：库里是 {row.display_id}，"
+                    f"清单写的是 {code}。编号发出去就不能改，先查清来源。"
+                )
             fields = dict(
                 media_id=item["media_id"],
                 source_id=item["source_id"],
@@ -128,11 +139,14 @@ def cmd_import_tasks(args):
                 speaker_name=item.get("speaker_name"),
             )
             if row is None:
-                session.add(Task(task_id=item["task_id"], **fields))
+                session.add(Task(task_id=item["task_id"], display_id=code, **fields))
                 added += 1
             else:
                 for key, value in fields.items():
                     setattr(row, key, value)
+                # 已有编号只补不改：上面已经挡掉了不一致的情况
+                if code and not row.display_id:
+                    row.display_id = code
                 updated += 1
         session.commit()
     print(f"任务导入完成：新增 {added}，更新 {updated}")
@@ -306,14 +320,24 @@ def cmd_assign_display_ids(args):
     with factory() as session:
         mapping = assign_display_ids(session, seed=args.seed)
         session.commit()
+        live = set(session.scalars(select(Task.source_id).distinct()))
 
+    # 编号发出去就不回收：退役的样本保留原编号并标 retired，
+    # 空出来的号绝不重新发给新样本——老编号指向新样本的话，
+    # 先前提交的结果会静悄悄对到错的样本上。
     path = Path(args.out)
+    retired = 0
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["display_id", "source_id", "dataset"])
+        writer.writerow(["display_id", "source_id", "dataset", "status"])
         for display_id, source_id in mapping:
-            writer.writerow([display_id, source_id, source_id.split("_")[0]])
-    print(f"共 {len(mapping)} 个样本，映射表写入 {path}")
+            status = "active" if source_id in live else "retired"
+            retired += status == "retired"
+            writer.writerow(
+                [display_id, source_id, source_id.split("_")[0], status]
+            )
+    print(f"共 {len(mapping)} 个样本（在用 {len(mapping)-retired}，"
+          f"退役 {retired}），映射表写入 {path}")
 
 
 def cmd_reissue_token(args):
