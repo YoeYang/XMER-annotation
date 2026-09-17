@@ -48,11 +48,6 @@ export default function App() {
   const [sync, setSync] = useState<SyncState | null>(null);
   const activeSession = useRef<AnnotationSession | null>(null);
 
-  useEffect(() => {
-    setSync(repository.getState());
-    return repository.subscribe(setSync) as unknown as () => void;
-  }, [repository]);
-
   const refresh = useCallback(async () => {
     const [nextAttempts, nextSubmissions] = await Promise.all([
       repository.listAttempts(annotator),
@@ -61,6 +56,20 @@ export default function App() {
     setAttempts(nextAttempts);
     setSubmissions(nextSubmissions);
   }, [repository, annotator]);
+
+  useEffect(() => {
+    setSync(repository.getState());
+    // 上传队列排空时重新读一次：侧栏的勾只认服务器确认收到的提交，
+    // 而提交是不等上传就返回的（等一次网络往返会让「下一步」卡住）。
+    // 没有这一下，勾要等到下次手动触发刷新才会出现。
+    let pending = repository.getState().pending;
+    return repository.subscribe((state) => {
+      setSync(state);
+      const settled = pending > 0 && state.pending === 0;
+      pending = state.pending;
+      if (settled && annotator) void refresh();
+    }) as unknown as () => void;
+  }, [repository, annotator, refresh]);
 
   useEffect(() => {
     let release: (() => void) | undefined;

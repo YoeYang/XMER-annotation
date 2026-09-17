@@ -54,6 +54,8 @@ export class SyncingRepository implements AnnotationRepository {
   private failures = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<(state: SyncState) => void>();
+  /** 服务器确认收到的提交，上一次读取的结果。 */
+  private confirmed: Submission[] = [];
   private state: SyncState = {
     pending: 0,
     syncing: false,
@@ -293,12 +295,23 @@ export class SyncingRepository implements AnnotationRepository {
       () => this.local.listAttempts(annotator),
     );
   }
+  /**
+   * 已提交的轮次——**只认服务器的答案**。
+   *
+   * 侧栏的勾据此而来，而勾是对标注者的承诺：这条标完了、存住了。
+   * 拿本机的记录充数就是假承诺——人以为做完了，数据其实只躺在自己
+   * 浏览器里，换台设备、清个缓存就没了。
+   *
+   * 服务器读不到时返回**上一次读到的**，而不是本机的：已经确认在云端的
+   * 那些不该因为一次网络抖动就从界面上消失，但没确认过的也不能凭空出现。
+   */
   async listSubmissions(annotator: string) {
-    return this.merged(
-      (row) => row.submission_id,
-      () => this.remote.listSubmissions(annotator),
-      () => this.local.listSubmissions(annotator),
-    );
+    try {
+      this.confirmed = await this.remote.listSubmissions(annotator);
+    } catch {
+      /* 保留上一次的答案 */
+    }
+    return this.confirmed;
   }
   async attemptSamples(attemptId: string) {
     return this.preferRemote(

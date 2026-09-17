@@ -36,12 +36,14 @@ function fakeRemote(
 ) {
   const seen = { submits: [] as string[] };
   const store: Submission[] = [];
+  let offline = opts.offline ?? false;
   const guard = async () => {
     if (opts.slowMs) await new Promise((r) => setTimeout(r, opts.slowMs));
-    if (opts.offline) throw new Error("网络不可达");
+    if (offline) throw new Error("网络不可达");
   };
   return {
     seen, store,
+    goOffline: () => (offline = true),
     repository: {
       checkpoint: vi.fn(guard),
       submitWith: vi.fn(async (attemptId: string, submissionId: string) => {
@@ -91,85 +93,70 @@ describe("标完一个维度立刻上传", () => {
     await sync.drain();
     expect(remote.seen.submits.length).toBe(1);
   });
-
-  it("本机落库后，界面立刻就能看到这条提交", async () => {
-    const db = local(), remote = fakeRemote({ slowMs: 300 });
-    const sync = new SyncingRepository(db, remote.repository);
-    const attempt = fixture();
-    await record(db, attempt);
-    await sync.submit(attempt.attempt_id);
-
-    // 上传还没完成，但侧栏的勾不能因此不出现
-    const rows = await sync.listSubmissions("A001");
-    expect(rows.map((r) => r.attempt_id)).toContain(attempt.attempt_id);
-  });
-
-  it("上传成功时 synced 为真，界面据此说「已上传」", async () => {
-    const db = local(), remote = fakeRemote();
-    const sync = new SyncingRepository(db, remote.repository);
-    const attempt = fixture();
-    await record(db, attempt);
-
-    expect(await sync.submitSynced(attempt.attempt_id)).toBe(true);
-  });
-
-  it("断网时不卡着人：如实回报没上传成功，数据留在本机等补传", async () => {
-    const db = local(), remote = fakeRemote({ offline: true });
-    const sync = new SyncingRepository(db, remote.repository, [10_000]);
-    const attempt = fixture();
-    await record(db, attempt);
-
-    expect(await sync.submitSynced(attempt.attempt_id, 200)).toBe(false);
-    expect(sync.getState().pending).toBeGreaterThan(0);
-    expect((await db.listSubmissions("A001")).length).toBe(1);
-  });
-
-  it("上传慢到超时也不卡：超时返回假，后台继续传", async () => {
-    const db = local(), remote = fakeRemote({ slowMs: 400 });
-    const sync = new SyncingRepository(db, remote.repository);
-    const attempt = fixture();
-    await record(db, attempt);
-
-    expect(await sync.submitSynced(attempt.attempt_id, 50)).toBe(false);
-    await sync.drain();
-    expect(remote.seen.submits.length).toBe(1);
-  });
 });
 
-describe("列表取本机与云端的并集", () => {
-  it("云端可达但这条还没传上去，本机有就得算数", async () => {
-    // 这才是「标完了勾不出现」的真实场景：服务器在线、列表读得到，
-    // 只是这一条的提交还没送达。若只认云端，界面就会否认人刚做完的事。
+describe("勾只认云端：本机存下不算完成", () => {
+  it("上传还没成功时，这条不算已提交", async () => {
+    // 勾是对标注者的承诺：这条标完了、存住了。云端没有却打勾，
+    // 就是假承诺——人以为做完了，数据其实只躺在自己浏览器里。
     const db = local(), remote = fakeRemote({ submitFails: true });
     const sync = new SyncingRepository(db, remote.repository, [10_000]);
     const attempt = fixture();
     await record(db, attempt);
-    await sync.submitSynced(attempt.attempt_id, 100);
+    await sync.submit(attempt.attempt_id);
 
     const rows = await sync.listSubmissions("A001");
-    expect(rows.map((r) => r.attempt_id)).toContain(attempt.attempt_id);
+    expect(rows.map((r) => r.attempt_id)).not.toContain(attempt.attempt_id);
   });
 
-  it("断网时也一样认本机的", async () => {
-    const db = local(), remote = fakeRemote({ offline: true });
-    const sync = new SyncingRepository(db, remote.repository, [10_000]);
-    const attempt = fixture();
-    await record(db, attempt);
-    await sync.submitSynced(attempt.attempt_id, 100);
-
-    const rows = await sync.listSubmissions("A001");
-    expect(rows.map((r) => r.attempt_id)).toContain(attempt.attempt_id);
-  });
-
-  it("同一条两边都有时不重复", async () => {
+  it("上传成功后，这条才算已提交", async () => {
     const db = local(), remote = fakeRemote();
     const sync = new SyncingRepository(db, remote.repository);
     const attempt = fixture();
     await record(db, attempt);
     await sync.submit(attempt.attempt_id);
+    await sync.drain();
 
     const rows = await sync.listSubmissions("A001");
-    const ids = rows.map((r) => r.submission_id);
-    expect(new Set(ids).size).toBe(ids.length);
+    expect(rows.map((r) => r.attempt_id)).toContain(attempt.attempt_id);
+  });
+
+  it("断网时宁可不显示，也不拿本机的充数", async () => {
+    const db = local(), remote = fakeRemote({ offline: true });
+    const sync = new SyncingRepository(db, remote.repository, [10_000]);
+    const attempt = fixture();
+    await record(db, attempt);
+    await sync.submit(attempt.attempt_id);
+
+    expect(await sync.listSubmissions("A001")).toEqual([]);
+  });
+
+  it("断网前读到过的，断网后仍照原样显示", async () => {
+    // 已经确认在云端的那些不该因为一次网络抖动就消失
+    const db = local(), remote = fakeRemote();
+    const sync = new SyncingRepository(db, remote.repository);
+    const attempt = fixture();
+    await record(db, attempt);
+    await sync.submit(attempt.attempt_id);
+    await sync.drain();
+    await sync.listSubmissions("A001");
+
+    remote.goOffline();
+    const rows = await sync.listSubmissions("A001");
+    expect(rows.map((r) => r.attempt_id)).toContain(attempt.attempt_id);
+  });
+
+  it("上传成功会通知订阅者，界面据此把勾补上", async () => {
+    const db = local(), remote = fakeRemote({ slowMs: 100 });
+    const sync = new SyncingRepository(db, remote.repository);
+    const attempt = fixture();
+    await record(db, attempt);
+
+    const settled: number[] = [];
+    sync.subscribe((state) => settled.push(state.pending));
+    await sync.submit(attempt.attempt_id);
+    await sync.drain();
+
+    expect(settled).toContain(0);
   });
 });
