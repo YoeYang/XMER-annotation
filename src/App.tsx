@@ -7,7 +7,10 @@ import type { SyncState } from "./storage/syncingRepository";
 import { captureToken, getToken } from "./auth";
 import { validateTasks } from "./core/textTimeline";
 import { locationOf, orderedTasks } from "./core/taskFlow";
-import { API_BASE, MODALITY_LABELS } from "./config";
+import { API_BASE } from "./config";
+import LangSwitch from "./components/LangSwitch";
+import { useLang } from "./LangContext";
+import type { Key } from "./i18n";
 import type { AnnotationSession } from "./core/session";
 import type { Attempt, Submission, Task } from "./types";
 import TaskSidebar from "./components/TaskSidebar";
@@ -22,6 +25,7 @@ function remembered(key: string, fallback: string) {
 }
 
 export default function App() {
+  const { t } = useLang();
   const [token] = useState(() => captureToken());
   const [repository] = useState(
     () =>
@@ -103,7 +107,7 @@ export default function App() {
     if (!locked) return;
     if (!token) {
       setError(
-        "缺少访问令牌，请用研究者发给你的专属网址打开。\nMissing token — please open the personal link you were given.",
+        t("err.noToken"),
       );
       return;
     }
@@ -115,8 +119,8 @@ export default function App() {
           headers: { authorization: "Bearer " + token },
         });
         if (response.status === 401 || response.status === 403)
-          throw new Error("访问令牌无效或已停用，请向研究者索取新链接。\nToken invalid or disabled — ask the researcher for a new link.");
-        if (!response.ok) throw new Error("无法连接标注服务器，请稍后重试。\nCannot reach the server — please try again.");
+          throw new Error(t("err.badToken"));
+        if (!response.ok) throw new Error(t("err.offline"));
         const me = await response.json();
         if (cancelled) return;
         setAnnotator(me.annotator_id);
@@ -150,7 +154,7 @@ export default function App() {
       } catch (reason) {
         if (!cancelled)
           setError(
-            reason instanceof Error ? reason.message : "标注工作区读取失败 Failed to load workspace",
+            reason instanceof Error ? reason.message : t("err.workspace"),
           );
       }
     })();
@@ -227,13 +231,14 @@ export default function App() {
               </span>
             </div>
           )}
+          <LangSwitch />
         </div>
       </header>
 
       {error && (
         <div className="global-error" role="alert">
           {error}
-          <button onClick={() => location.reload()}>重新加载</button>
+          <button onClick={() => location.reload()}>{t("step.redo")}</button>
         </div>
       )}
 
@@ -304,28 +309,19 @@ export default function App() {
             aria-labelledby="modality-guide-title"
           >
             <h2 id="modality-guide-title">
-              {MODALITY_LABELS[pendingTask.modality]} · 标注指南 Guide
+              {t(("modality." + pendingTask.modality) as Key)} · {t("guide.title")}
             </h2>
             <p>
               {
-                {
-                  face: "只看目标说话人的面部表情。\nWatch the target speaker's face only.",
-                  body: "只看被遮住脸的那个人的身体动作与姿态。\nWatch the body language of the masked person.",
-                  audio: "只听目标说话人的声音。\nListen to the target speaker only.",
-                  text: "只依据文字内容判断。\nJudge from the text alone.",
-                  audiovisual: "结合画面与声音判断。\nUse both picture and sound.",
-                }[pendingTask.modality]
+t(("guide." + pendingTask.modality) as Key)
               }
             </p>
             <p>
-              先熟悉，再标效价与唤醒。按住亮起的竖条开始，松开即暂停；标完按回车继续。
-              <br />
-              Familiarize first, then rate valence and arousal. Hold the lit bar
-              to record, release to pause, press Enter when done.
+              {t("guide.how")}
             </p>
             <div className="modality-guide-actions">
               {pendingTask.task_id !== selected && (
-                <button onClick={() => setPendingTask(null)}>取消 Cancel</button>
+                <button onClick={() => setPendingTask(null)}>{t("step.cancel")}</button>
               )}
               <button
                 className="button primary"
@@ -335,10 +331,10 @@ export default function App() {
                   void performSelect(task);
                 }}
               >
-                {pendingTask.task_id === selected ? "知道了 OK" : "开始 Start"}
+                {pendingTask.task_id === selected ? t("step.gotIt") : t("step.start")}
                 <kbd>
                   <CornerDownLeft size={15} />
-                  回车 Enter
+                  {t("step.enter")}
                 </kbd>
               </button>
             </div>

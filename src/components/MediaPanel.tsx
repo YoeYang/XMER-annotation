@@ -7,9 +7,10 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
+import { useLang } from "../LangContext";
+import type { Key } from "../i18n";
 import {
   formatTime,
-  MODALITY_LABELS,
   PLAYBACK_RATES,
   resolveAssetPath,
 } from "../config";
@@ -36,6 +37,7 @@ export default function MediaPanel({
   view,
   onReload,
 }: Props) {
+  const { t } = useLang();
   const element = useRef<HTMLMediaElement | null>(null);
   const [source, setSource] = useState(
     task.modality === "text" ? "" : resolveAssetPath(task.src),
@@ -54,7 +56,7 @@ export default function MediaPanel({
         const response = await fetch(resolveAssetPath(task.src), {
           signal: controller.signal,
         });
-        if (!response.ok) throw new Error("文本文件加载失败 Text file failed");
+        if (!response.ok) throw new Error(t("media.textFailed"));
         const data = validateTranscript(await response.json(), task.duration);
         if (controller.signal.aborted) return;
         objectUrl = URL.createObjectURL(silentWav(task.duration));
@@ -62,7 +64,7 @@ export default function MediaPanel({
         setSource(objectUrl);
       } catch (error) {
         if (!controller.signal.aborted)
-          session.fail(error instanceof Error ? error.message : "文本加载失败 Text failed");
+          session.fail(error instanceof Error ? error.message : t("media.textFailed"));
       }
     })();
     return () => {
@@ -93,7 +95,7 @@ export default function MediaPanel({
   return (
     <section
       className="media-panel v3-media"
-      aria-label={MODALITY_LABELS[task.modality]}
+      aria-label={t(("modality." + task.modality) as Key)}
     >
       <div className="media-toolbar">
         <figure className="speaker-ref">
@@ -103,24 +105,24 @@ export default function MediaPanel({
           {task.modality !== "body" && task.speaker_ref_src && (
             <img
               src={resolveAssetPath(task.speaker_ref_src)}
-              alt="目标说话人 Target speaker"
+              alt={t("speaker.target")}
             />
           )}
           <figcaption>
             {task.modality === "body"
-              ? "请标注被遮住脸部的人的肢体情绪\nRate the body language of the masked person"
+              ? t("speaker.masked")
               : task.speaker_ref_src
-                ? "请标注这位说话人的情绪 Rate this speaker"
+                ? t("speaker.rateThis")
                 : task.speaker_name
-                  ? "说话人 Speaker：" + task.speaker_name
-                  : "未提供说话人指示 No speaker reference"}
+                  ? t("speaker.name") + "：" + task.speaker_name
+                  : t("speaker.none")}
           </figcaption>
         </figure>
       </div>
 
       {task.modality === "audio" && view.rate === 0.1 && (
         <p className="rate-warning" role="status">
-          0.1× 音频可能难以听清 · May be hard to hear
+          {t("media.slowAudio")}
         </p>
       )}
 
@@ -165,7 +167,7 @@ export default function MediaPanel({
                       </span>
                     ),
                   )
-                : "载入中 Loading…"}
+                : t("media.textLoading")}
             </p>
           </div>
         )}
@@ -227,7 +229,7 @@ export default function MediaPanel({
         <button
           className="media-control-button"
           aria-label={muted ? "打开声音" : "静音"}
-          title={silentModality ? "本模态无声音 No audio" : undefined}
+          title={silentModality ? t("media.noAudio") : undefined}
           disabled={silentModality}
           onClick={() => setMuted((value) => !value)}
         >

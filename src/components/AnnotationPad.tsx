@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { Annoyed, BookOpen, Frown, Smile, Zap } from "lucide-react";
 import { normalizeValue } from "../core/sampler";
+import { useLang } from "../LangContext";
 import type { Dimension, FlowPage, SessionView } from "../types";
 
 interface Props {
@@ -12,26 +13,6 @@ interface Props {
   onRelease: () => void;
   onGuide: () => void;
 }
-
-const labels: Record<
-  Dimension,
-  { title: string; top: string; middle: string; bottom: string }
-> = {
-  valence: {
-    title: "效价 Valence",
-    top: "正向 Positive +1",
-    middle: "中性 Neutral 0",
-    bottom: "负向 Negative −1",
-  },
-  arousal: {
-    // −1 是「无聊」而非「冷静」：平静是中点，两端分别是提不起劲与亢奋。
-    // 把 −1 写成「冷静」会把中点的含义挪到端点上，整条尺度跟着偏。
-    title: "唤醒 Arousal",
-    top: "激动 Excited +1",
-    middle: "平静 Calm 0",
-    bottom: "无聊 Bored −1",
-  },
-};
 
 function HoldMouse({ pressed = true }: { pressed?: boolean }) {
   return (
@@ -68,7 +49,14 @@ export default function AnnotationPad({
   onRelease,
   onGuide,
 }: Props) {
+  const { t } = useLang();
   const pointer = useRef<number | null>(null);
+  const scale = (dimension: Dimension) => ({
+    title: t(dimension === "valence" ? "dim.valence" : "dim.arousal"),
+    top: t(dimension === "valence" ? "valence.high" : "arousal.high"),
+    middle: t(dimension === "valence" ? "valence.mid" : "arousal.mid"),
+    bottom: t(dimension === "valence" ? "valence.low" : "arousal.low"),
+  });
   const activeDimension = page === "familiarization" ? null : page;
   // 纵向取值：**上为 +1、下为 −1**，与视频下方那条曲线同向——
   // 横着拖而曲线上下走，人得在脑子里转一次向，判断就慢一拍。
@@ -81,11 +69,11 @@ export default function AnnotationPad({
   const heading = (
     <div className="dimension-heading">
       <h2 id="dimension-title">
-        {activeDimension ? labels[activeDimension].title : "先熟悉 Familiarize"}
+        {activeDimension ? scale(activeDimension).title : t("step.familiarize")}
       </h2>
       <button className="annotation-guide" onClick={onGuide}>
         <BookOpen size={18} />
-        标注指南 Guide
+        {t("guide.title")}
       </button>
     </div>
   );
@@ -96,7 +84,7 @@ export default function AnnotationPad({
         aria-label="熟悉材料"
       >
         {heading}
-        <p>看懂即可继续 · Continue when ready</p>
+        <p>{t("step.ready")}</p>
       </section>
     );
   }
@@ -112,12 +100,12 @@ export default function AnnotationPad({
       >
         <span className="status-dot" />
         {view.phase === "completed"
-          ? "已完成 Done"
+          ? t("state.done")
           : sampling
-            ? "采样中 Recording…"
+            ? t("state.recording")
             : view.phase === "hold-delay"
-              ? "准备中 Starting…"
-              : "暂停 Paused"}
+              ? t("state.starting")
+              : t("state.paused")}
       </div>
       <div className="dimension-bars">
         {dimensions.map((dimension) => {
@@ -128,7 +116,7 @@ export default function AnnotationPad({
               data-dimension={dimension}
               key={dimension}
             >
-              <div className="dimension-label">{labels[dimension].title}</div>
+              <div className="dimension-label">{scale(dimension).title}</div>
               <div className="bar-track">
               <div className="bar-semantics">
                 <span className="end-high">
@@ -137,22 +125,22 @@ export default function AnnotationPad({
                   ) : (
                     <Zap aria-hidden="true" />
                   )}
-                  {labels[dimension].top}
+                  {scale(dimension).top} +1
                 </span>
-                <span className="end-mid">{labels[dimension].middle}</span>
+                <span className="end-mid">{scale(dimension).middle} 0</span>
                 <span className="end-low">
                   {dimension === "valence" ? (
                     <Frown aria-hidden="true" />
                   ) : (
                     <Annoyed aria-hidden="true" />
                   )}
-                  {labels[dimension].bottom}
+                  {scale(dimension).bottom} −1
                 </span>
               </div>
               <div
                 className="dimension-bar"
                 aria-label={
-                  active ? labels[dimension].title + "标注条" : undefined
+                  active ? scale(dimension).title : undefined
                 }
                 aria-describedby={active ? "hold-hint" : undefined}
                 aria-disabled={!active || !canAnnotate}
@@ -219,11 +207,11 @@ export default function AnnotationPad({
         <div id="hold-hint" className="mouse-hints">
           <span className="hold-hint">
             <HoldMouse />
-            按住 Hold
+            {t("hold.hold")}
           </span>
           <span className="hold-hint">
             <HoldMouse pressed={false} />
-            松开暂停 Release
+            {t("hold.release")}
           </span>
         </div>
         <output className="active-value" data-testid="dimension-value">

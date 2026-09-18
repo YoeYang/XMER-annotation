@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Dimension, TracePoint } from "../types";
+import { useLang } from "../LangContext";
 
 /**
  * 标注轨迹的实时预览：横轴媒体时间，纵轴 −1…+1。
@@ -27,6 +28,7 @@ export default function TraceChart({
   time: number;
   dimension: Dimension | null;
 }) {
+  const { t } = useLang();
   const canvas = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -89,7 +91,7 @@ export default function TraceChart({
     <div className="trace-chart">
       <canvas ref={canvas} aria-hidden="true" />
       <span className="trace-hint">
-        {trace.length ? "你标的趋势 Your trace" : "按住后这里会画出趋势 Hold to draw"}
+        {trace.length ? t("trace.yours") : t("trace.empty")}
       </span>
     </div>
   );

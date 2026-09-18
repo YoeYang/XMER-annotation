@@ -10,7 +10,8 @@ import {
   Type,
   UserRound,
 } from "lucide-react";
-import { MODALITY_LABELS } from "../config";
+import { useLang } from "../LangContext";
+import type { Key } from "../i18n";
 import {
   buildTaskSections,
   locationOf,
@@ -62,6 +63,7 @@ export default function TaskSidebar({
       );
   }, [selectedTask?.modality]);
 
+  const { t } = useLang();
   const done = (task: Task) =>
     taskComplete(attempts, submissions, task.task_id);
   const doneCount = tasks.filter(done).length;
@@ -75,8 +77,8 @@ export default function TaskSidebar({
         <button
           className="sidebar-collapse"
           onClick={() => setCollapsed((value) => !value)}
-          aria-label={collapsed ? "展开侧栏 Expand" : "收起侧栏 Collapse"}
-          title={collapsed ? "展开侧栏 Expand" : "收起侧栏 Collapse"}
+          aria-label={collapsed ? t("side.expand") : t("side.collapse")}
+          title={collapsed ? t("side.expand") : t("side.collapse")}
         >
           {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
@@ -91,37 +93,37 @@ export default function TaskSidebar({
         <>
           <div className="overall-progress">
             <div>
-              <span>总体进度 Progress</span>
+              <span>{t("side.progress")}</span>
               <strong>
                 {doneCount}
                 <small> / {tasks.length}</small>
               </strong>
             </div>
             <progress
-              aria-label="标注进度 Progress"
+              aria-label={t("side.progress")}
               max={tasks.length}
               value={doneCount}
             />
           </div>
 
-          <div className="filter-tabs" aria-label="筛选 Filter">
+          <div className="filter-tabs" aria-label={t("side.tasks")}>
             <button
               aria-pressed={filter === "all"}
               className={filter === "all" ? "active" : ""}
               onClick={() => setFilter("all")}
             >
-              全部 All
+              {t("side.all")}
             </button>
             <button
               aria-pressed={filter === "todo"}
               className={filter === "todo" ? "active" : ""}
               onClick={() => setFilter("todo")}
             >
-              未完成 Todo
+              {t("side.todo")}
             </button>
           </div>
 
-          <nav className="sample-list" aria-label="任务目录 Tasks">
+          <nav className="sample-list" aria-label={t("side.tasks")}>
             {sections.map((section) => {
               const visible = section.tasks.filter(
                 ({ task }) => filter === "all" || !done(task),
@@ -157,7 +159,7 @@ export default function TaskSidebar({
                     <Icon size={16} />
                     <strong>
                       {sectionId}{" "}
-                      {MODALITY_LABELS[section.modality]}
+                      {t(("modality." + section.modality) as Key)}
                     </strong>
                     <span>
                       {completeInSection}/{section.tasks.length}
@@ -187,7 +189,7 @@ export default function TaskSidebar({
                               <Check
                                 size={16}
                                 className="teal-text"
-                                aria-label="已完成 Done"
+                                aria-label={t("side.done")}
                               />
                             ) : null}
                           </button>

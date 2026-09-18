@@ -5,7 +5,8 @@ import { dimensionSubmitted, latestAttempt } from "../core/taskFlow";
 import type { AnnotationRepository } from "../storage/repository";
 import type { SyncState } from "../storage/syncingRepository";
 import type { Attempt, Dimension, FlowPage, Submission, Task } from "../types";
-import { MODALITY_LABELS } from "../config";
+import { useLang } from "../LangContext";
+import type { Key } from "../i18n";
 import AnnotationPad from "./AnnotationPad";
 import TraceChart from "./TraceChart";
 import MediaPanel from "./MediaPanel";
@@ -66,6 +67,7 @@ export default function Workspace(props: Props) {
     useState(initialPlays);
   const [reannotating, setReannotating] = useState(false);
   const [busy, setBusy] = useState(false);
+  const { t } = useLang();
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
@@ -95,7 +97,7 @@ export default function Workspace(props: Props) {
     try {
       await operation();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "操作失败，请重试 Something went wrong");
+      setNotice(error instanceof Error ? error.message : t("err.retry"));
     } finally {
       setBusy(false);
     }
@@ -221,7 +223,7 @@ export default function Workspace(props: Props) {
     <main className="workspace v3-workspace">
       <div className="workspace-heading">
         <h1>
-          {MODALITY_LABELS[task.modality]} {props.position}/{props.sectionTotal}
+          {t(("modality." + task.modality) as Key)} {props.position}/{props.sectionTotal}
         </h1>
       </div>
 
@@ -267,7 +269,7 @@ export default function Workspace(props: Props) {
           {(notice || view.save === "error") && (
             <p className="operation-notice" role="status">
               {notice ||
-                "本机存储写入失败，请检查浏览器设置后刷新 Local storage failed：" + view.saveError}
+                t("err.localStorage") + "：" + view.saveError}
             </p>
           )}
 
@@ -278,17 +280,17 @@ export default function Workspace(props: Props) {
               onClick={back}
             >
               <ArrowLeft size={17} />
-              上一步 Back
+              {t("step.back")}
             </button>
             <button
               className="restart-dimension"
-              aria-label="重新标注当前维度 Redo"
-              title="仅重新标注当前维度 Redo this dimension"
+              aria-label={t("step.redo")}
+              title={t("step.redoHint")}
               disabled={!canRestart || busy}
               onClick={restart}
             >
               <RotateCcw size={16} />
-              重标 Redo
+              {t("step.redo")}
             </button>
             <button
               className="next-step"
@@ -296,7 +298,7 @@ export default function Workspace(props: Props) {
               onClick={next}
             >
               <span>
-                {page === "familiarization" ? "看懂了 Next" : "下一步 Next"}
+                {page === "familiarization" ? t("step.gotIt") : t("step.next")}
               </span>
               <kbd>
                 <CornerDownLeft size={16} />
