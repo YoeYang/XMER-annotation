@@ -54,7 +54,7 @@ export default function MediaPanel({
         const response = await fetch(resolveAssetPath(task.src), {
           signal: controller.signal,
         });
-        if (!response.ok) throw new Error("文本文件加载失败");
+        if (!response.ok) throw new Error("文本文件加载失败 Text file failed");
         const data = validateTranscript(await response.json(), task.duration);
         if (controller.signal.aborted) return;
         objectUrl = URL.createObjectURL(silentWav(task.duration));
@@ -62,7 +62,7 @@ export default function MediaPanel({
         setSource(objectUrl);
       } catch (error) {
         if (!controller.signal.aborted)
-          session.fail(error instanceof Error ? error.message : "文本加载失败");
+          session.fail(error instanceof Error ? error.message : "文本加载失败 Text failed");
       }
     })();
     return () => {
@@ -103,24 +103,24 @@ export default function MediaPanel({
           {task.modality !== "body" && task.speaker_ref_src && (
             <img
               src={resolveAssetPath(task.speaker_ref_src)}
-              alt="目标说话人"
+              alt="目标说话人 Target speaker"
             />
           )}
           <figcaption>
             {task.modality === "body"
-              ? "请标注被遮住脸部的人的肢体情绪"
+              ? "请标注被遮住脸部的人的肢体情绪\nRate the body language of the masked person"
               : task.speaker_ref_src
-                ? "请标注这位说话人的情绪"
+                ? "请标注这位说话人的情绪 Rate this speaker"
                 : task.speaker_name
-                  ? "说话人：" + task.speaker_name
-                  : "未提供说话人指示"}
+                  ? "说话人 Speaker：" + task.speaker_name
+                  : "未提供说话人指示 No speaker reference"}
           </figcaption>
         </figure>
       </div>
 
       {task.modality === "audio" && view.rate === 0.1 && (
         <p className="rate-warning" role="status">
-          0.1× 音频可能难以听清
+          0.1× 音频可能难以听清 · May be hard to hear
         </p>
       )}
 
@@ -165,7 +165,7 @@ export default function MediaPanel({
                       </span>
                     ),
                   )
-                : "文本载入中…"}
+                : "载入中 Loading…"}
             </p>
           </div>
         )}
@@ -227,7 +227,7 @@ export default function MediaPanel({
         <button
           className="media-control-button"
           aria-label={muted ? "打开声音" : "静音"}
-          title={silentModality ? "当前模态不提供声音" : undefined}
+          title={silentModality ? "本模态无声音 No audio" : undefined}
           disabled={silentModality}
           onClick={() => setMuted((value) => !value)}
         >

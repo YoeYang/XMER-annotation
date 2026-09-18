@@ -957,3 +957,12 @@ kbd {
   color: var(--muted, #8b8578);
   pointer-events: none;
 }
+
+/* 双语文案里的换行是有意的：中英各占一行，挤在一起两种语言都难读 */
+.modality-guide p,
+.speaker-ref figcaption,
+.global-error,
+.inline-error,
+.operation-notice {
+  white-space: pre-line;
+}

@@ -187,9 +187,9 @@ test("五模态顺序与侧栏折叠宽度", async ({ page }) => {
     "S4 文本",
     "S5 完整",
   ]);
-  await page.getByRole("button", { name: "收起任务侧栏" }).click();
+  await page.getByRole("button", { name: "收起侧栏 Collapse" }).click();
   await expect(page.locator(".v3-sidebar")).toHaveCSS("width", "56px");
-  await page.getByRole("button", { name: "展开任务侧栏" }).click();
+  await page.getByRole("button", { name: "展开侧栏 Expand" }).click();
   await expect(page.locator(".sample-list")).toBeVisible();
 });
 
@@ -205,7 +205,7 @@ test("仅显示块内序号与工单号", async ({ page }) => {
 test("熟悉页自动播放 1 倍速，保留说话人，无说明卡片", async ({ page }) => {
   await open(page);
   await expect(page.getByLabel("播放速度")).toHaveValue("1");
-  await expect(page.getByAltText("目标说话人")).toBeVisible();
+  await expect(page.getByAltText("目标说话人 Target speaker")).toBeVisible();
   await expect(page.locator(".speaker-ref")).toContainText(
     "请标注这位说话人的情绪",
   );
@@ -234,7 +234,7 @@ test("初始鼠标光标不代表零值；可在任意位置开始", async ({ pa
   await expect(page.getByTestId("dimension-value")).toBeEmpty();
   await expect(page.locator(".mouse-hints .hold-mouse")).toHaveCount(2);
   await expect(page.locator(".mouse-hints .mouse-left-button")).toHaveCount(1);
-  await expect(page.locator(".mouse-hints")).toContainText("松开暂停");
+  await expect(page.locator(".mouse-hints")).toContainText("松开暂停 Release");
   await expect(page.locator(".dimension-row.active .dimension-bar")).toHaveCSS(
     "width",
     "30px",
@@ -328,7 +328,7 @@ test("三页完整提交、两种渐变、固定条位置与完成筛选", async
   await page.mouse.up();
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("唤醒 Arousal标注条")).toBeVisible();
-  await page.getByRole("button", { name: "标注指南", exact: true }).click();
+  await page.getByRole("button", { name: "标注指南 Guide", exact: true }).click();
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("唤醒 Arousal标注条")).toBeVisible();
   await expect(page.getByLabel("播放速度")).toHaveValue("1");
@@ -371,13 +371,13 @@ test("三页完整提交、两种渐变、固定条位置与完成筛选", async
     Array.from({ length: 68 }, (_, index) => index / 10),
   );
   await expect(page.locator('.task-item [aria-label="已完成"]')).toHaveCount(1);
-  await page.getByRole("button", { name: "未完成", exact: true }).click();
+  await page.getByRole("button", { name: "未完成 Todo", exact: true }).click();
   await expect(page.locator(".task-item")).toHaveCount(1);
   await expect(page.locator(".task-item")).toHaveText("S1-2");
-  await page.getByRole("button", { name: "全部任务" }).click();
+  await page.getByRole("button", { name: "全部 All" }).click();
   await page.getByRole("button", { name: "S1-1" }).click();
   await expect(page.getByLabel("唤醒 Arousal标注条")).toBeVisible();
-  await page.getByRole("button", { name: "重新标注当前维度" }).click();
+  await page.getByRole("button", { name: "重新标注当前维度 Redo" }).click();
   await expect(page.locator(".next-step")).toBeDisabled();
   expect(
     (await records(page, "attempts")).filter(
@@ -388,12 +388,12 @@ test("三页完整提交、两种渐变、固定条位置与完成筛选", async
 
 test("熟悉与效价页可重开指南，回车关闭不推进、不创建标注", async ({ page }) => {
   await open(page);
-  await page.getByRole("button", { name: "标注指南", exact: true }).click();
+  await page.getByRole("button", { name: "标注指南 Guide", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("面部表情");
   await page.keyboard.press("Enter");
   await expect(page.locator(".familiarization-copy")).toBeVisible();
   await enterValence(page);
-  await page.getByRole("button", { name: "标注指南", exact: true }).click();
+  await page.getByRole("button", { name: "标注指南 Guide", exact: true }).click();
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("效价 Valence标注条")).toBeVisible();
   expect(await records(page, "attempts")).toHaveLength(0);
@@ -422,7 +422,7 @@ test("返回熟悉页恢复 1 倍速", async ({ page }) => {
   await page.locator(".next-step").click();
   await expect(page.getByLabel("播放速度")).toHaveValue("0.5");
   await page.getByLabel("播放速度").selectOption("1");
-  await page.getByRole("button", { name: "上一步" }).click();
+  await page.getByRole("button", { name: "上一步 Back" }).click();
   await expect(page.getByLabel("播放速度")).toHaveValue("1");
 });
 
@@ -436,7 +436,7 @@ test("跨模态回车只确认指引，不推进背后的页面", async ({ page 
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.locator(".workspace-heading")).toContainText("身体 1/2");
+  await expect(page.locator(".workspace-heading")).toContainText("身体 Body 1/2");
   await expect(page.locator(".familiarization-copy")).toBeVisible();
 });
 
@@ -448,7 +448,7 @@ test("音频 0.1 倍速警告", async ({ page }) => {
   await section.locator(".task-section-heading").click();
   await page.getByRole("button", { name: "S3-1" }).click();
   await page.keyboard.press("Enter");
-  await expect(page.locator(".workspace-heading")).toContainText("仅音频");
+  await expect(page.locator(".workspace-heading")).toContainText("音频 Audio");
   await page.getByLabel("播放速度").selectOption("0.1");
   await expect(page.locator(".rate-warning")).toContainText("难以听清");
   const volume = page.getByRole("button", { name: "静音" });
@@ -468,7 +468,7 @@ test("刷新保留中断草稿，需要显式重标", async ({ page }) => {
     .toBeGreaterThan(0);
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "重新标注当前维度" }),
+    page.getByRole("button", { name: "重新标注当前维度 Redo" }),
   ).toBeEnabled();
   await expect(page.locator(".next-step")).toBeDisabled();
 });
@@ -485,10 +485,13 @@ test("断网继续本地保存并自动补传", async ({ page, context }) => {
   await expect
     .poll(async () => (await records(page, "samples")).length)
     .toBeGreaterThan(0);
-  await expect(page.locator(".operation-notice")).toContainText("联网后上传");
+  // 断网时界面不提示：保存与上传的状态对标注者无用，他也无能为力。
+  // 只有本机都写不进去才必须说，那时继续标就是白标。
+  await expect(page.locator(".operation-notice")).toHaveCount(0);
   await page.unroute("**/api/**", offline);
   await context.setOffline(false);
-  await expect(page.locator(".operation-notice")).toHaveCount(0, {
+  // 恢复网络后自动补传，勾随之出现——勾只认云端确认过的
+  await expect(page.locator(".task-item .teal-text").first()).toBeVisible({
     timeout: 20000,
   });
 });
@@ -501,7 +504,7 @@ test("720px 与 390px 无横向溢出，说话人与导航可见", async ({ page
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
       .toBe(width);
-    await expect(page.getByAltText("目标说话人")).toBeVisible();
+    await expect(page.getByAltText("目标说话人 Target speaker")).toBeVisible();
     await expect(page.locator(".next-step")).toBeVisible();
   }
 });

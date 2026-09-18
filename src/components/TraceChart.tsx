@@ -89,7 +89,7 @@ export default function TraceChart({
     <div className="trace-chart">
       <canvas ref={canvas} aria-hidden="true" />
       <span className="trace-hint">
-        {trace.length ? "你标出的趋势" : "按住标注条后，这里会画出你标的趋势"}
+        {trace.length ? "你标的趋势 Your trace" : "按住后这里会画出趋势 Hold to draw"}
       </span>
     </div>
   );

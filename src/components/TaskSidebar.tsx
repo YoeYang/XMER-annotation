@@ -75,8 +75,8 @@ export default function TaskSidebar({
         <button
           className="sidebar-collapse"
           onClick={() => setCollapsed((value) => !value)}
-          aria-label={collapsed ? "展开任务侧栏" : "收起任务侧栏"}
-          title={collapsed ? "展开任务侧栏" : "收起任务侧栏"}
+          aria-label={collapsed ? "展开侧栏 Expand" : "收起侧栏 Collapse"}
+          title={collapsed ? "展开侧栏 Expand" : "收起侧栏 Collapse"}
         >
           {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
@@ -91,37 +91,37 @@ export default function TaskSidebar({
         <>
           <div className="overall-progress">
             <div>
-              <span>总体进度</span>
+              <span>总体进度 Progress</span>
               <strong>
                 {doneCount}
                 <small> / {tasks.length}</small>
               </strong>
             </div>
             <progress
-              aria-label="总体标注进度"
+              aria-label="标注进度 Progress"
               max={tasks.length}
               value={doneCount}
             />
           </div>
 
-          <div className="filter-tabs" aria-label="任务筛选">
+          <div className="filter-tabs" aria-label="筛选 Filter">
             <button
               aria-pressed={filter === "all"}
               className={filter === "all" ? "active" : ""}
               onClick={() => setFilter("all")}
             >
-              全部任务
+              全部 All
             </button>
             <button
               aria-pressed={filter === "todo"}
               className={filter === "todo" ? "active" : ""}
               onClick={() => setFilter("todo")}
             >
-              未完成
+              未完成 Todo
             </button>
           </div>
 
-          <nav className="sample-list" aria-label="任务目录">
+          <nav className="sample-list" aria-label="任务目录 Tasks">
             {sections.map((section) => {
               const visible = section.tasks.filter(
                 ({ task }) => filter === "all" || !done(task),
@@ -157,9 +157,7 @@ export default function TaskSidebar({
                     <Icon size={16} />
                     <strong>
                       {sectionId}{" "}
-                      {MODALITY_LABELS[section.modality]
-                        .replace("仅", "")
-                        .replace("视频", "")}
+                      {MODALITY_LABELS[section.modality]}
                     </strong>
                     <span>
                       {completeInSection}/{section.tasks.length}
@@ -189,7 +187,7 @@ export default function TaskSidebar({
                               <Check
                                 size={16}
                                 className="teal-text"
-                                aria-label="已完成"
+                                aria-label="已完成 Done"
                               />
                             ) : null}
                           </button>

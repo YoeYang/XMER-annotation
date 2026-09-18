@@ -103,7 +103,7 @@ export default function App() {
     if (!locked) return;
     if (!token) {
       setError(
-        "缺少访问令牌。请使用研究者发给你的专属网址打开本页面，不要手动输入地址。",
+        "缺少访问令牌，请用研究者发给你的专属网址打开。\nMissing token — please open the personal link you were given.",
       );
       return;
     }
@@ -115,8 +115,8 @@ export default function App() {
           headers: { authorization: "Bearer " + token },
         });
         if (response.status === 401 || response.status === 403)
-          throw new Error("访问令牌无效或已停用，请向研究者索取新的专属网址。");
-        if (!response.ok) throw new Error("无法连接标注服务器，请稍后重试。");
+          throw new Error("访问令牌无效或已停用，请向研究者索取新链接。\nToken invalid or disabled — ask the researcher for a new link.");
+        if (!response.ok) throw new Error("无法连接标注服务器，请稍后重试。\nCannot reach the server — please try again.");
         const me = await response.json();
         if (cancelled) return;
         setAnnotator(me.annotator_id);
@@ -150,7 +150,7 @@ export default function App() {
       } catch (reason) {
         if (!cancelled)
           setError(
-            reason instanceof Error ? reason.message : "标注工作区读取失败",
+            reason instanceof Error ? reason.message : "标注工作区读取失败 Failed to load workspace",
           );
       }
     })();
@@ -304,25 +304,28 @@ export default function App() {
             aria-labelledby="modality-guide-title"
           >
             <h2 id="modality-guide-title">
-              {MODALITY_LABELS[pendingTask.modality]} · 标注指南
+              {MODALITY_LABELS[pendingTask.modality]} · 标注指南 Guide
             </h2>
             <p>
               {
                 {
-                  face: "只看目标说话人的面部表情。",
-                  body: "只看目标说话人的身体动作与姿态。",
-                  audio: "只听目标说话人的声音。",
-                  text: "只依据文字内容判断说话人的情绪。",
-                  audiovisual: "结合画面与声音，判断目标说话人的情绪。",
+                  face: "只看目标说话人的面部表情。\nWatch the target speaker's face only.",
+                  body: "只看被遮住脸的那个人的身体动作与姿态。\nWatch the body language of the masked person.",
+                  audio: "只听目标说话人的声音。\nListen to the target speaker only.",
+                  text: "只依据文字内容判断。\nJudge from the text alone.",
+                  audiovisual: "结合画面与声音判断。\nUse both picture and sound.",
                 }[pendingTask.modality]
               }
             </p>
             <p>
-              先熟悉，再标效价与唤醒。按住亮起的条开始，松开即暂停；标完按回车继续。
+              先熟悉，再标效价与唤醒。按住亮起的竖条开始，松开即暂停；标完按回车继续。
+              <br />
+              Familiarize first, then rate valence and arousal. Hold the lit bar
+              to record, release to pause, press Enter when done.
             </p>
             <div className="modality-guide-actions">
               {pendingTask.task_id !== selected && (
-                <button onClick={() => setPendingTask(null)}>取消</button>
+                <button onClick={() => setPendingTask(null)}>取消 Cancel</button>
               )}
               <button
                 className="button primary"
@@ -332,10 +335,10 @@ export default function App() {
                   void performSelect(task);
                 }}
               >
-                {pendingTask.task_id === selected ? "知道了" : "开始本模态"}
+                {pendingTask.task_id === selected ? "知道了 OK" : "开始 Start"}
                 <kbd>
                   <CornerDownLeft size={15} />
-                  回车
+                  回车 Enter
                 </kbd>
               </button>
             </div>

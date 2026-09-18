@@ -23,24 +23,26 @@ export function rememberAnnotationRate(rate: number) {
     // 禁用浏览器存储时，当前会话的选择仍由 session 保留。
   }
 }
+// 双语标签一律「中文 English」，英文只用一个词——侧栏和标题都很窄，
+// 长了会换行，把本来一眼能扫完的目录拆成两行。
 export const MODALITY_LABELS: Record<Modality, string> = {
-  audio: "仅音频",
-  text: "仅文本",
-  face: "面部",
-  body: "身体",
-  audiovisual: "完整视频",
+  audio: "音频 Audio",
+  text: "文本 Text",
+  face: "面部 Face",
+  body: "身体 Body",
+  audiovisual: "完整 Full",
 };
 export const PHASE_LABELS: Record<Phase, string> = {
-  loading: "加载材料中",
-  ready: "等待开始",
-  starting: "正在开始",
-  familiarizing: "正在熟悉",
-  "hold-delay": "准备采样",
-  recording: "正在采样",
-  paused: "已暂停",
-  buffering: "正在缓冲",
-  completed: "本轮已完成",
-  error: "加载或播放失败",
+  loading: "加载中 Loading",
+  ready: "等待开始 Ready",
+  starting: "开始中 Starting",
+  familiarizing: "熟悉中 Familiarizing",
+  "hold-delay": "准备采样 Starting",
+  recording: "采样中 Recording",
+  paused: "已暂停 Paused",
+  buffering: "缓冲中 Buffering",
+  completed: "已完成 Done",
+  error: "加载失败 Failed",
 };
 export function resolveAssetPath(path: string): string {
   const base = import.meta.env.BASE_URL;

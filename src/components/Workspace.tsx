@@ -95,7 +95,7 @@ export default function Workspace(props: Props) {
     try {
       await operation();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "操作失败，请重试");
+      setNotice(error instanceof Error ? error.message : "操作失败，请重试 Something went wrong");
     } finally {
       setBusy(false);
     }
@@ -267,7 +267,7 @@ export default function Workspace(props: Props) {
           {(notice || view.save === "error") && (
             <p className="operation-notice" role="status">
               {notice ||
-                "本机存储写入失败，请检查浏览器设置后刷新：" + view.saveError}
+                "本机存储写入失败，请检查浏览器设置后刷新 Local storage failed：" + view.saveError}
             </p>
           )}
 
@@ -278,17 +278,17 @@ export default function Workspace(props: Props) {
               onClick={back}
             >
               <ArrowLeft size={17} />
-              上一步
+              上一步 Back
             </button>
             <button
               className="restart-dimension"
-              aria-label="重新标注当前维度"
-              title="仅重新标注当前维度"
+              aria-label="重新标注当前维度 Redo"
+              title="仅重新标注当前维度 Redo this dimension"
               disabled={!canRestart || busy}
               onClick={restart}
             >
               <RotateCcw size={16} />
-              重标
+              重标 Redo
             </button>
             <button
               className="next-step"
@@ -296,7 +296,7 @@ export default function Workspace(props: Props) {
               onClick={next}
             >
               <span>
-                {page === "familiarization" ? "已看懂，下一步" : "下一步"}
+                {page === "familiarization" ? "看懂了 Next" : "下一步 Next"}
               </span>
               <kbd>
                 <CornerDownLeft size={16} />
