@@ -30,7 +30,8 @@ from datapaths import FRAMES_DIR, REPO_ROOT  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1] / "out"
 MEDIA_V3 = ROOT / "media_v3"
-TRANSCRIPTS_V3 = ROOT / "transcripts_v3"
+# 上传用精简版：候选译文与评审理由是给我们看的，不该发给浏览器
+TRANSCRIPTS_V3 = ROOT / "transcripts_upload"
 FRAMES = FRAMES_DIR / "out" / "frames"
 UPLOAD = ROOT / "upload"
 TASKS = ROOT / "tasks_import_v3.json"
