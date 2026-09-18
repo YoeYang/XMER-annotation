@@ -1079,25 +1079,12 @@ kbd {
   outline-offset: 1px;
 }
 
-/* 文本模态的中英并排：中文逐词点亮，英文整句跟着亮。
-   未读部分压成浅灰而不是隐藏——看得见还有多少没读完，心里有数。 */
+/* 一律呈现英文，逐词点亮——明暗与中文素材那套一致 */
 .transcript-line {
   margin: 0 0 14px;
 }
 .transcript-line:last-child {
   margin-bottom: 0;
 }
-.transcript-line .zh {
-  display: block;
-}
-.transcript-line .en {
-  display: block;
-  margin-top: 4px;
-  font-size: 0.82em;
-  line-height: 1.5;
-  color: #b9b3a8;
-  transition: color 0.15s;
-}
-.transcript-line .en.said {
-  color: #6f6a60;
+ color: #cfe0d7;
 }

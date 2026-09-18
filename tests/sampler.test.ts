@@ -195,53 +195,74 @@ describe("文本与任务时间轴", () => {
   });
 });
 
-describe("中英并排：中文逐词、英文整句", () => {
-  const bilingual: Transcript = {
+describe("文本一律呈现英文，按原文节奏逐词点亮", () => {
+  const chinese: Transcript = {
     duration: 4,
     sentences: [
       {
-        start: 0.1,
-        end: 1.5,
+        start: 1.0,
+        end: 3.0,
         text_en: "Don't dream anymore, study hard.",
         tokens: [
-          { start: 0.1, end: 0.4, text: "别" },
-          { start: 0.5, end: 0.8, text: "做梦" },
-          { start: 0.9, end: 1.5, text: "了" },
-        ],
-      },
-      {
-        start: 2.0,
-        end: 3.5,
-        text_en: "At least all will turn.",
-        tokens: [
-          { start: 2.0, end: 2.6, text: "至少" },
-          { start: 2.7, end: 3.5, text: "都会转" },
+          { start: 1.0, end: 1.5, text: "别" },
+          { start: 1.6, end: 2.2, text: "做梦" },
+          { start: 2.3, end: 3.0, text: "了" },
         ],
       },
     ],
   };
 
-  it("译文按句挂着，不切成词", () => {
-    // 中英词序不同，逐词对齐做不到；硬对齐会把译文切成看不懂的碎片
-    const lines = transcriptLines(bilingual, 0);
-    expect(lines).toHaveLength(2);
-    expect(lines[0].english).toBe("Don't dream anymore, study hard.");
-    expect(lines[0].tokens).toHaveLength(3);
+  it("中文素材显示译文，不显示原文", () => {
+    // 并排中英的话，懂中文的读中文、不懂的读英文，两拨人的节奏与理解
+    // 都不同，标出来的曲线没法放在一起比
+    const words = transcriptLines(chinese, 9).flatMap((l) =>
+      l.tokens.map((t) => t.text),
+    );
+    expect(words).toEqual(["Don't", "dream", "anymore,", "study", "hard."]);
+    expect(words.join("")).not.toContain("做梦");
   });
 
-  it("中文逐词点亮，英文跟着本句首词一起亮", () => {
-    const lines = transcriptLines(bilingual, 0.6);
-    expect(lines[0].tokens.map((t) => t.spoken)).toEqual([true, true, false]);
-    expect(lines[0].spoken).toBe(true);
-    // 第二句还没到，整句连同译文都不亮
-    expect(lines[1].spoken).toBe(false);
-    expect(lines[1].tokens.every((t) => !t.spoken)).toBe(true);
+  it("整句的起止跟着原文，句内均匀分配", () => {
+    // 句子 1.0–3.0 秒共 5 个词，每词 0.4 秒
+    const at = (time: number) =>
+      transcriptLines(chinese, time)[0].tokens.filter((t) => t.spoken).length;
+    expect(at(0.9)).toBe(0); // 整句还没开始
+    expect(at(1.0)).toBe(1); // 第一个词跟着句子起点亮
+    expect(at(1.9)).toBe(3); // 1.0 + 2×0.4 = 1.8 已过
+    expect(at(3.0)).toBe(5); // 句末全亮
   });
 
-  it("没有译文的转录稿照常渲染", () => {
-    // 非 chsims 的素材本来就是英文，没有 text_en 字段
+  it("英文素材原样用自己的词级时间戳", () => {
+    // 非 chsims 的素材本来就是英文，有真实的逐词对齐，不必打散重排
     const lines = transcriptLines(english, 1);
-    expect(lines[0].english).toBe("");
     expect(lines[0].tokens.length).toBeGreaterThan(0);
+    expect(lines[0].tokens.some((t) => t.spoken)).toBe(true);
+  });
+});
+
+describe("时长校验留 1 毫秒容差", () => {
+  const doc = (duration: number): Transcript => ({
+    duration,
+    sentences: [
+      {
+        start: 0.1,
+        end: 1.0,
+        tokens: [{ start: 0.1, end: 1.0, text: "话" }],
+      },
+    ],
+  });
+
+  it("末位差异不该把整个任务锁死", () => {
+    // 线上真实事故：清单写 3.718333、转录稿写 3.718，2317 个文本任务
+    // 因此打不开，界面报「文本时长与任务不一致」。两个数各自经过一次
+    // JSON 往返和一次 round，末位对不上是常态，而这点差异标注上毫无意义。
+    expect(() => validateTranscript(doc(3.718), 3.718333)).not.toThrow();
+    expect(() => validateTranscript(doc(3.7185), 3.718)).not.toThrow();
+  });
+
+  it("真正不是同一条素材时仍然拦下", () => {
+    // 容差只放过末位噪声，差半秒就是拿错了文件
+    expect(() => validateTranscript(doc(3.7), 4.2)).toThrow();
+    expect(() => validateTranscript(doc(3.72), 3.718)).toThrow();
   });
 });

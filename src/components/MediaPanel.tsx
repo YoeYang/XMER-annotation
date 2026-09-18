@@ -164,23 +164,16 @@ export default function MediaPanel({
           <div className="text-scene">
             {transcript ? (
               <div data-testid="transcript">
+                {/* 一律呈现英文：并排中英的话，懂中文的读中文、不懂的读英文，
+                    两拨人的节奏与理解都不同，标出来的曲线没法比 */}
                 {transcriptLines(transcript, view.time).map((line, index) => (
                   <p className="transcript-line" key={index}>
-                    <span className="zh">
-                      {line.tokens.map((token, i) => (
-                        <span key={i} className={token.spoken ? "said" : ""}>
-                          {token.lead}
-                          {token.text}
-                        </span>
-                      ))}
-                    </span>
-                    {/* 中文逐词点亮、英文整句点亮：中英词序不同，
-                        逐词对齐做不到，硬对齐会把译文切成看不懂的碎片 */}
-                    {line.english && (
-                      <span className={"en " + (line.spoken ? "said" : "")}>
-                        {line.english}
+                    {line.tokens.map((token, i) => (
+                      <span key={i} className={token.spoken ? "said" : ""}>
+                        {token.lead}
+                        {token.text}
                       </span>
-                    )}
+                    ))}
                   </p>
                 ))}
               </div>

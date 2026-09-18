@@ -30,7 +30,15 @@ export function validateTranscript(
   duration: number,
 ): Transcript {
   const doc = input as Transcript;
-  if (!doc || doc.duration !== duration || !Array.isArray(doc.sentences))
+  // 容差 1 毫秒而不是严格相等：两个数各自经过一次 JSON 往返、一次
+  // Python 的 round，末位差一点就会把整个文本任务锁死——曾经有 2317 个
+  // 任务因为 3.718333 对 3.718 打不开，而这点差异标注上毫无意义。
+  if (
+    !doc ||
+    !Number.isFinite(doc.duration) ||
+    Math.abs(doc.duration - duration) > 0.001 ||
+    !Array.isArray(doc.sentences)
+  )
     throw new Error("文本时长与任务不一致");
   let previous = 0;
   for (const sentence of doc.sentences) {
@@ -39,7 +47,7 @@ export function validateTranscript(
       !Number.isFinite(sentence.end) ||
       sentence.start < previous ||
       sentence.end <= sentence.start ||
-      sentence.end > duration ||
+      sentence.end > doc.duration + 0.001 ||
       !Array.isArray(sentence.tokens) ||
       !sentence.tokens.length
     )
@@ -82,24 +90,37 @@ function needsSpace(before: string, after: string): boolean {
  * 逐词浮现动得太快不好标，且句子讲完后画面会空掉——尤其片尾有长静默时。
  */
 /**
- * 按句分组，供中英并排滚动。
+ * 一律呈现英文，按原文的时间节奏逐词点亮。
  *
- * 中文逐词点亮、英文整句点亮：中英词序不同，逐词对齐做不到，
- * 硬对齐只会把译文切成看不懂的碎片。句子是情绪的自然单位。
+ * **不并排显示中英**：并排的话，懂中文的人读中文、不懂的读英文，两拨人
+ * 看到的节奏和措辞都不同，标出来的曲线没法放在一起比——语言差异会混进
+ * 标注者差异里，而这正是这项研究要分离的东西。
+ *
+ * 中文素材（chsims）用译文 `text_en`，词级时间戳没法跨语言对齐，
+ * 就把整句的时间跨度**均匀分给译文的每个词**：句子的起止是准的，
+ * 句内节奏是匀的。英文素材本来就带词级时间戳，原样用。
  */
 export function transcriptLines(doc: Transcript, time: number) {
   return doc.sentences.map((sentence) => {
+    if (sentence.text_en) {
+      const words = sentence.text_en.split(/\s+/).filter(Boolean);
+      const span = Math.max(sentence.end - sentence.start, 0.001);
+      const step = span / Math.max(words.length, 1);
+      return {
+        tokens: words.map((word, index) => ({
+          text: word,
+          lead: index ? " " : "",
+          spoken: sentence.start + index * step <= time,
+        })),
+      };
+    }
     let previous = "";
-    const tokens = sentence.tokens.map((token) => {
-      const lead = needsSpace(previous, token.text) ? " " : "";
-      previous = token.text;
-      return { text: token.text, lead, spoken: token.start <= time };
-    });
     return {
-      tokens,
-      english: sentence.text_en ?? "",
-      // 整句点亮的时机跟着首词走，与中文那边同步起步
-      spoken: sentence.start <= time,
+      tokens: sentence.tokens.map((token) => {
+        const lead = needsSpace(previous, token.text) ? " " : "";
+        previous = token.text;
+        return { text: token.text, lead, spoken: token.start <= time };
+      }),
     };
   });
 }

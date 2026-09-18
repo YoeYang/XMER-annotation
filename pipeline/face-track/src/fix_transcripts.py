@@ -89,7 +89,9 @@ def fix(sample_id, duration):
         moved_total += moved
         max_shift = max(max_shift, shift)
 
-    doc["duration"] = round(duration, 3)
+    # 与 build.json 里的值**逐位相同**：前端拿它和任务时长比对，
+    # 舍成 3 位会让 3.718333 变 3.718，整个文本任务打不开
+    doc["duration"] = duration
 
     # 硬断言：一个词都不能越界，且时间必须单调不减
     prev = -1.0
