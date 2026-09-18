@@ -105,8 +105,6 @@ const S = {
                      fi: "Pienennä sivupalkki" },
   "side.done": { en: "Done", zh: "已完成", fi: "Valmis" },
   "side.title": { en: "Tasks", zh: "任务目录", fi: "Tehtävät" },
-  // 报问题时报这个号，研究者据此定位是哪条样本
-  "side.ticket": { en: "Report ID", zh: "报障工单号", fi: "Ilmoitustunnus" },
 
   // ---------------------------------------------------------- 说话人
   "speaker.rateThis": { en: "Rate this speaker", zh: "请标注这位说话人的情绪",

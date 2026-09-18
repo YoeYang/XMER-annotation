@@ -204,7 +204,9 @@ export default function TaskSidebar({
 
           {selectedTask && selectedLocation && (
             <div className="sidebar-ticket">
-              <span>{t("side.ticket")}</span>
+              {/* 内部标识符，固定英语不随界面语言变：它是要原样念给
+                  研究者听的一串东西，翻译过去反而对不上后台看到的。 */}
+              <span>Report ID</span>
               <strong>
                 {ticketId(
                   annotator,
