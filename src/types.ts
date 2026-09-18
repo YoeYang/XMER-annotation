@@ -23,9 +23,16 @@ export interface Segment {
   end: number;
   text: string;
 }
+export interface TranscriptSentence {
+  start: number;
+  end: number;
+  tokens: Segment[];
+  /** 英文译文，按句对齐。中英词序不同，逐词对齐做不到也不必做。 */
+  text_en?: string;
+}
 export interface Transcript {
   duration: number;
-  sentences: { start: number; end: number; tokens: Segment[] }[];
+  sentences: TranscriptSentence[];
 }
 export interface Sample {
   task_id: string;

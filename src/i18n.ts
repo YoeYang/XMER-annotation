@@ -54,10 +54,11 @@ const S = {
   "valence.high": { en: "Positive", zh: "正向", fi: "Myönteinen" },
   "valence.mid": { en: "Neutral", zh: "中性", fi: "Neutraali" },
   "valence.low": { en: "Negative", zh: "负向", fi: "Kielteinen" },
-  // bored 取「提不起劲」这一支（Pitkästynyt），不是形容事物无趣的 Tylsä
-  "arousal.high": { en: "Excited", zh: "激动", fi: "Innostunut" },
+  // 滑条端点只有一个词，用「兴奋 / Innostunut」会把唤醒轴往正向情绪上带——
+  // 高唤醒既可能是狂喜也可能是暴怒。端点说强度，具体情绪留给指南去举例。
+  "arousal.high": { en: "High arousal", zh: "高唤醒", fi: "Korkea vireystila" },
   "arousal.mid": { en: "Calm", zh: "平静", fi: "Rauhallinen" },
-  "arousal.low": { en: "Bored", zh: "无聊", fi: "Pitkästynyt" },
+  "arousal.low": { en: "Low arousal", zh: "低唤醒", fi: "Matala vireystila" },
 
   // ---------------------------------------------------------- 流程
   "step.familiarize": { en: "Familiarize", zh: "先熟悉", fi: "Tutustu" },
@@ -90,7 +91,7 @@ const S = {
   // ---------------------------------------------------------- 操作提示
   "hold.hold": { en: "Hold", zh: "按住", fi: "Pidä pohjassa" },
   "hold.release": { en: "Release to pause", zh: "松开暂停", fi: "Vapauta" },
-  "trace.yours": { en: "Your trace", zh: "你标的趋势", fi: "Sinun käyrä" },
+  "trace.yours": { en: "Your trace", zh: "你标的趋势", fi: "Sinun käyräsi" },
   "trace.empty": { en: "Hold the bar to draw", zh: "按住后这里会画出趋势",
                    fi: "Pidä palkkia pohjassa" },
 
@@ -157,10 +158,11 @@ const S = {
     zh: "−1 负向（难过、生气）· 0 中性 · +1 正向（开心、快乐）",
     fi: "−1 kielteinen (surullinen, vihainen) · 0 neutraali · +1 myönteinen (iloinen)",
   },
+  // 「无聊」在这里是 pitkästynyt（提不起劲），不是 tylsä（事物无趣）
   "guide.arousal": {
     en: "−1 bored, not engaged · 0 calmly talking · +1 highly excited or tense",
     zh: "−1 无聊、注意力不在对话上 · 0 平静地交谈 · +1 高度兴奋或紧张",
-    fi: "−1 pitkästynyt, ei mukana · 0 rauhallinen keskustelu · +1 hyvin innostunut tai jännittynyt",
+    fi: "−1 pitkästynyt, huomio ei kohdistu keskusteluun · 0 puhuja keskustelee rauhallisesti · +1 hyvin innostunut tai jännittynyt",
   },
   "guide.arousalNote": {
     en: "Arousal is independent of whether the emotion is positive or negative.",
@@ -170,14 +172,14 @@ const S = {
 
   "guide.how": { en: "How to rate", zh: "如何标注", fi: "Näin merkitset" },
   "guide.how1": {
-    en: "Familiarize yourself with the clip first, then rate valence and arousal in turn.",
-    zh: "先熟悉片段，再依次标注效价和唤醒。",
-    fi: "Tutustu ensin klippiin, arvioi sitten valenssi ja vireystila vuorotellen.",
+    en: "Familiarize yourself with the clip first. Then rate valence, and after that arousal.",
+    zh: "先熟悉片段。先标效价，再标唤醒。",
+    fi: "Tutustu ensin klippiin. Arvioi sitten ensin valenssi ja sen jälkeen vireystila.",
   },
   "guide.how2": {
-    en: "Each dimension must cover the whole clip before you can continue. Playback speed is adjustable, and you can redo a dimension at any time.",
-    zh: "每个维度都需标完整个片段，才能进入下一步。播放速度可调，也可随时重新标注。",
-    fi: "Kumpikin ulottuvuus on merkittävä koko klipin ajalta ennen jatkamista. Toistonopeutta voi säätää, ja merkinnän voi tehdä uudelleen milloin tahansa.",
+    en: "Rate each dimension across the whole clip. You can move to the next step only once the current dimension is finished. Playback speed is adjustable, and you can redo the current dimension at any time.",
+    zh: "每个维度都要标完整个片段。当前维度标完，才能进入下一步。播放速度可调，当前维度可随时重标。",
+    fi: "Arvioi kumpikin ulottuvuus koko klipin ajalta. Voit siirtyä seuraavaan vaiheeseen vasta, kun nykyisen ulottuvuuden arviointi on valmis. Toistonopeutta voi säätää, ja nykyisen ulottuvuuden arvioinnin voi tehdä uudelleen milloin tahansa.",
   },
 
   "guide.status": { en: "Status", zh: "状态与提示", fi: "Tila" },
@@ -187,8 +189,15 @@ const S = {
     fi: "Näytteen ✓ tarkoittaa, että merkintä on valmis ja lähetetty. Jos sivu jumittuu, napsauta Uudelleen.",
   },
 
+  // 只说「按住」不够：不移动鼠标就只是一条直线，人以为自己在标其实没标
+  "guide.move": {
+    en: "Hold the left mouse button on the rating bar and move the mouse up or down as the speaker's emotion changes. Releasing the button pauses both playback and rating.",
+    zh: "在标注条上按住鼠标左键，随说话人情绪的变化上下移动鼠标。松开按键，播放与标注同时暂停。",
+    fi: "Pidä hiiren vasen painike painettuna arviointipalkin päällä ja liikuta hiirtä ylös tai alas puhujan tunnetilan muuttuessa. Kun vapautat painikkeen, toisto ja arviointi keskeytyvät.",
+  },
+
   "guide.opHold": { en: "Hold left button — record", zh: "按住左键：标注",
-                    fi: "Pidä vasenta painiketta — tallenna" },
+                    fi: "Pidä hiiren vasen painike painettuna — tallenna" },
   "guide.opRelease": { en: "Release — pause", zh: "松开左键：暂停",
                        fi: "Vapauta — tauko" },
   "guide.opEnter": { en: "Enter — next step", zh: "回车：下一步",

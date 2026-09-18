@@ -81,6 +81,29 @@ function needsSpace(before: string, after: string): boolean {
  * 整段转录稿一次给全，已说到的词标 spoken。
  * 逐词浮现动得太快不好标，且句子讲完后画面会空掉——尤其片尾有长静默时。
  */
+/**
+ * 按句分组，供中英并排滚动。
+ *
+ * 中文逐词点亮、英文整句点亮：中英词序不同，逐词对齐做不到，
+ * 硬对齐只会把译文切成看不懂的碎片。句子是情绪的自然单位。
+ */
+export function transcriptLines(doc: Transcript, time: number) {
+  return doc.sentences.map((sentence) => {
+    let previous = "";
+    const tokens = sentence.tokens.map((token) => {
+      const lead = needsSpace(previous, token.text) ? " " : "";
+      previous = token.text;
+      return { text: token.text, lead, spoken: token.start <= time };
+    });
+    return {
+      tokens,
+      english: sentence.text_en ?? "",
+      // 整句点亮的时机跟着首词走，与中文那边同步起步
+      spoken: sentence.start <= time,
+    };
+  });
+}
+
 export function transcriptTokens(doc: Transcript, time: number): TimedToken[] {
   const out: TimedToken[] = [];
   let previous = "";

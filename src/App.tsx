@@ -335,6 +335,7 @@ export default function App() {
             <h3>{t("guide.how")}</h3>
             <ul className="guide-steps">
               <li>{t("guide.how1")}</li>
+              <li>{t("guide.move")}</li>
               <li>{t("guide.how2")}</li>
             </ul>
 

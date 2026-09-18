@@ -17,7 +17,7 @@ import {
 import type { FlowPage, SessionView, Task, Transcript } from "../types";
 import {
   silentWav,
-  transcriptTokens,
+  transcriptLines,
   validateTranscript,
 } from "../core/textTimeline";
 import type { AnnotationSession } from "../core/session";
@@ -162,18 +162,31 @@ export default function MediaPanel({
         )}
         {task.modality === "text" && (
           <div className="text-scene">
-            <p data-testid="transcript">
-              {transcript
-                ? transcriptTokens(transcript, view.time).map(
-                    (token, index) => (
-                      <span key={index} className={token.spoken ? "said" : ""}>
-                        {token.lead}
-                        {token.text}
+            {transcript ? (
+              <div data-testid="transcript">
+                {transcriptLines(transcript, view.time).map((line, index) => (
+                  <p className="transcript-line" key={index}>
+                    <span className="zh">
+                      {line.tokens.map((token, i) => (
+                        <span key={i} className={token.spoken ? "said" : ""}>
+                          {token.lead}
+                          {token.text}
+                        </span>
+                      ))}
+                    </span>
+                    {/* 中文逐词点亮、英文整句点亮：中英词序不同，
+                        逐词对齐做不到，硬对齐会把译文切成看不懂的碎片 */}
+                    {line.english && (
+                      <span className={"en " + (line.spoken ? "said" : "")}>
+                        {line.english}
                       </span>
-                    ),
-                  )
-                : t("media.textLoading")}
-            </p>
+                    )}
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p data-testid="transcript">{t("media.textLoading")}</p>
+            )}
           </div>
         )}
         <span className="stage-audio">

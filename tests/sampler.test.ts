@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeValue, Sampler } from "../src/core/sampler";
 import {
   silentWav,
+  transcriptLines,
   transcriptTokens,
   validateTasks,
   validateTranscript,
@@ -191,5 +192,56 @@ describe("文本与任务时间轴", () => {
     expect(view.getUint32(40, true) / view.getUint32(28, true)).toBe(12);
     expect(() => silentWav(Infinity)).toThrow();
     expect(() => silentWav(3601)).toThrow();
+  });
+});
+
+describe("中英并排：中文逐词、英文整句", () => {
+  const bilingual: Transcript = {
+    duration: 4,
+    sentences: [
+      {
+        start: 0.1,
+        end: 1.5,
+        text_en: "Don't dream anymore, study hard.",
+        tokens: [
+          { start: 0.1, end: 0.4, text: "别" },
+          { start: 0.5, end: 0.8, text: "做梦" },
+          { start: 0.9, end: 1.5, text: "了" },
+        ],
+      },
+      {
+        start: 2.0,
+        end: 3.5,
+        text_en: "At least all will turn.",
+        tokens: [
+          { start: 2.0, end: 2.6, text: "至少" },
+          { start: 2.7, end: 3.5, text: "都会转" },
+        ],
+      },
+    ],
+  };
+
+  it("译文按句挂着，不切成词", () => {
+    // 中英词序不同，逐词对齐做不到；硬对齐会把译文切成看不懂的碎片
+    const lines = transcriptLines(bilingual, 0);
+    expect(lines).toHaveLength(2);
+    expect(lines[0].english).toBe("Don't dream anymore, study hard.");
+    expect(lines[0].tokens).toHaveLength(3);
+  });
+
+  it("中文逐词点亮，英文跟着本句首词一起亮", () => {
+    const lines = transcriptLines(bilingual, 0.6);
+    expect(lines[0].tokens.map((t) => t.spoken)).toEqual([true, true, false]);
+    expect(lines[0].spoken).toBe(true);
+    // 第二句还没到，整句连同译文都不亮
+    expect(lines[1].spoken).toBe(false);
+    expect(lines[1].tokens.every((t) => !t.spoken)).toBe(true);
+  });
+
+  it("没有译文的转录稿照常渲染", () => {
+    // 非 chsims 的素材本来就是英文，没有 text_en 字段
+    const lines = transcriptLines(english, 1);
+    expect(lines[0].english).toBe("");
+    expect(lines[0].tokens.length).toBeGreaterThan(0);
   });
 });
