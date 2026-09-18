@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, CornerDownLeft } from "lucide-react";
+import {
+  Activity,
+  CornerDownLeft,
+  MousePointer,
+  MousePointerClick,
+} from "lucide-react";
 import { IndexedDbRepository } from "./storage/indexedDbRepository";
 import { HttpRepository } from "./storage/httpRepository";
 import { SyncingRepository } from "./storage/syncingRepository";
@@ -309,16 +314,49 @@ export default function App() {
             aria-labelledby="modality-guide-title"
           >
             <h2 id="modality-guide-title">
-              {t(("modality." + pendingTask.modality) as Key)} · {t("guide.title")}
+              {t(("modality." + pendingTask.modality) as Key)} ·{" "}
+              {t("guide.title")}
             </h2>
-            <p>
-              {
-t(("guide." + pendingTask.modality) as Key)
-              }
+            <p className="guide-lead">
+              {t(("lead." + pendingTask.modality) as Key)}
             </p>
-            <p>
-              {t("guide.how")}
-            </p>
+
+            <h3>{t("guide.dims")}</h3>
+            <dl className="guide-dims">
+              <dt>{t("dim.valence")}</dt>
+              <dd>{t("guide.valence")}</dd>
+              <dt>{t("dim.arousal")}</dt>
+              <dd>
+                {t("guide.arousal")}
+                <em>{t("guide.arousalNote")}</em>
+              </dd>
+            </dl>
+
+            <h3>{t("guide.how")}</h3>
+            <ul className="guide-steps">
+              <li>{t("guide.how1")}</li>
+              <li>{t("guide.how2")}</li>
+            </ul>
+
+            <h3>{t("guide.status")}</h3>
+            <ul className="guide-steps">
+              <li>{t("guide.status1")}</li>
+            </ul>
+
+            <div className="guide-ops">
+              <span>
+                <MousePointerClick size={16} aria-hidden="true" />
+                {t("guide.opHold")}
+              </span>
+              <span>
+                <MousePointer size={16} aria-hidden="true" />
+                {t("guide.opRelease")}
+              </span>
+              <span>
+                <CornerDownLeft size={16} aria-hidden="true" />
+                {t("guide.opEnter")}
+              </span>
+            </div>
             <div className="modality-guide-actions">
               {pendingTask.task_id !== selected && (
                 <button onClick={() => setPendingTask(null)}>{t("step.cancel")}</button>

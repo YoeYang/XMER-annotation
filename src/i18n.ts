@@ -121,29 +121,78 @@ const S = {
                       fi: "Kohdepuhuja" },
 
   // ---------------------------------------------------------- 指南
-  "guide.title": { en: "Guide", zh: "标注指南", fi: "Ohje" },
-  "guide.face": { en: "Watch the target speaker's face only.",
-                  zh: "只看目标说话人的面部表情。",
-                  fi: "Katso vain kohdepuhujan kasvoja." },
-  "guide.body": {
-    en: "Watch the body language of the person whose face is masked.",
-    zh: "只看被遮住脸的那个人的身体动作与姿态。",
-    fi: "Katso sen henkilön kehonkieltä, jonka kasvot on peitetty.",
+  "guide.title": { en: "Annotation Guide", zh: "情绪标注指南",
+                   fi: "Merkintäohje" },
+
+  // 导语：各模态看的东西不同，这一句是整份指南里最要紧的
+  "lead.face": {
+    en: "Identify the target speaker from the reference photo, then rate their emotion continuously from facial expression alone.",
+    zh: "请根据头像确认指定说话人，仅依据其面部表情，连续标注情绪变化。",
+    fi: "Tunnista kohdepuhuja viitekuvasta ja arvioi hänen tunnetilaansa jatkuvasti pelkkien ilmeiden perusteella.",
   },
-  "guide.audio": { en: "Listen to the target speaker only.",
-                   zh: "只听目标说话人的声音。",
-                   fi: "Kuuntele vain kohdepuhujaa." },
-  "guide.text": { en: "Judge from the text alone.",
-                  zh: "只依据文字内容判断。",
-                  fi: "Arvioi pelkän tekstin perusteella." },
-  "guide.audiovisual": { en: "Use both picture and sound.",
-                         zh: "结合画面与声音判断。",
-                         fi: "Käytä sekä kuvaa että ääntä." },
-  "guide.how": {
-    en: "Familiarize first, then rate valence and arousal. Hold the lit bar to record, release to pause, press Enter when done.",
-    zh: "先熟悉，再标效价与唤醒。按住亮起的竖条开始，松开即暂停；标完按回车继续。",
-    fi: "Tutustu ensin, arvioi sitten valenssi ja vireystila. Pidä valaistua palkkia pohjassa tallentaaksesi, vapauta pysäyttääksesi, paina Enter kun olet valmis.",
+  "lead.body": {
+    en: "Rate the person whose face is masked, continuously, from body movement and posture alone.",
+    zh: "请标注被遮住脸部的那个人，仅依据其肢体动作与姿态，连续标注情绪变化。",
+    fi: "Arvioi jatkuvasti sitä henkilöä, jonka kasvot on peitetty, pelkän kehonliikkeen ja asennon perusteella.",
   },
+  "lead.audio": {
+    en: "Identify the target speaker from the reference photo, then rate their emotion continuously from tone of voice alone.",
+    zh: "请根据头像确认指定说话人，仅依据其语气语调，连续标注情绪变化。",
+    fi: "Tunnista kohdepuhuja viitekuvasta ja arvioi hänen tunnetilaansa jatkuvasti pelkän äänensävyn perusteella.",
+  },
+  "lead.text": {
+    en: "Rate the emotion continuously from the wording alone, as the text appears.",
+    zh: "仅依据逐词呈现的文字内容，连续标注情绪变化。",
+    fi: "Arvioi tunnetilaa jatkuvasti pelkän sanamuodon perusteella sitä mukaa kun teksti ilmestyy.",
+  },
+  "lead.audiovisual": {
+    en: "Identify the target speaker from the reference photo, then rate their emotion continuously using both picture and sound.",
+    zh: "请根据头像确认指定说话人，结合画面与声音，连续标注情绪变化。",
+    fi: "Tunnista kohdepuhuja viitekuvasta ja arvioi hänen tunnetilaansa jatkuvasti sekä kuvan että äänen perusteella.",
+  },
+
+  "guide.dims": { en: "Dimensions", zh: "标注维度", fi: "Ulottuvuudet" },
+  "guide.valence": {
+    en: "−1 negative (sad, angry) · 0 neutral · +1 positive (happy, cheerful)",
+    zh: "−1 负向（难过、生气）· 0 中性 · +1 正向（开心、快乐）",
+    fi: "−1 kielteinen (surullinen, vihainen) · 0 neutraali · +1 myönteinen (iloinen)",
+  },
+  "guide.arousal": {
+    en: "−1 bored, not engaged · 0 calmly talking · +1 highly excited or tense",
+    zh: "−1 无聊、注意力不在对话上 · 0 平静地交谈 · +1 高度兴奋或紧张",
+    fi: "−1 pitkästynyt, ei mukana · 0 rauhallinen keskustelu · +1 hyvin innostunut tai jännittynyt",
+  },
+  "guide.arousalNote": {
+    en: "Arousal is independent of whether the emotion is positive or negative.",
+    zh: "唤醒程度与情绪正负无关。",
+    fi: "Vireystila on riippumaton siitä, onko tunne myönteinen vai kielteinen.",
+  },
+
+  "guide.how": { en: "How to rate", zh: "如何标注", fi: "Näin merkitset" },
+  "guide.how1": {
+    en: "Familiarize yourself with the clip first, then rate valence and arousal in turn.",
+    zh: "先熟悉片段，再依次标注效价和唤醒。",
+    fi: "Tutustu ensin klippiin, arvioi sitten valenssi ja vireystila vuorotellen.",
+  },
+  "guide.how2": {
+    en: "Each dimension must cover the whole clip before you can continue. Playback speed is adjustable, and you can redo a dimension at any time.",
+    zh: "每个维度都需标完整个片段，才能进入下一步。播放速度可调，也可随时重新标注。",
+    fi: "Kumpikin ulottuvuus on merkittävä koko klipin ajalta ennen jatkamista. Toistonopeutta voi säätää, ja merkinnän voi tehdä uudelleen milloin tahansa.",
+  },
+
+  "guide.status": { en: "Status", zh: "状态与提示", fi: "Tila" },
+  "guide.status1": {
+    en: "A ✓ on a sample means it is finished and uploaded. If the page seems stuck, click Redo.",
+    zh: "样本显示 ✓，表示标注已完成并上传。页面卡住时，点击「重标」。",
+    fi: "Näytteen ✓ tarkoittaa, että merkintä on valmis ja lähetetty. Jos sivu jumittuu, napsauta Uudelleen.",
+  },
+
+  "guide.opHold": { en: "Hold left button — record", zh: "按住左键：标注",
+                    fi: "Pidä vasenta painiketta — tallenna" },
+  "guide.opRelease": { en: "Release — pause", zh: "松开左键：暂停",
+                       fi: "Vapauta — tauko" },
+  "guide.opEnter": { en: "Enter — next step", zh: "回车：下一步",
+                     fi: "Enter — seuraava" },
 
   // ---------------------------------------------------------- 媒体
   "media.noAudio": { en: "No audio in this modality", zh: "本模态无声音",

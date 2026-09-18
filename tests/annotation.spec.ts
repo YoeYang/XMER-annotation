@@ -106,7 +106,7 @@ async function open(page: Page) {
   await page.addInitScript(() => localStorage.setItem("xmer.lang", "zh"));
   await page.goto("/?t=frontend-test");
   await expect(page.locator(".sample-list")).toBeVisible();
-  await expect(page.getByRole("dialog")).toContainText("面部 · 标注指南");
+  await expect(page.getByRole("dialog")).toContainText("面部 · 情绪标注指南");
   await page.getByRole("button", { name: "看懂了" }).click();
   await expect
     .poll(() =>
