@@ -302,7 +302,7 @@ export default function Workspace(props: Props) {
               </span>
               <kbd>
                 <CornerDownLeft size={16} />
-                回车
+                {t("step.enter")}
               </kbd>
               <ArrowRight size={20} />
             </button>

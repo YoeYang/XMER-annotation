@@ -81,7 +81,7 @@ export default function AnnotationPad({
     return (
       <section
         className="v3-step-panel familiarization-copy"
-        aria-label="熟悉材料"
+        aria-label={t("player.familiarizeArea")}
       >
         {heading}
         <p>{t("step.ready")}</p>

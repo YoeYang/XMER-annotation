@@ -104,6 +104,9 @@ const S = {
   "side.collapse": { en: "Collapse sidebar", zh: "收起侧栏",
                      fi: "Pienennä sivupalkki" },
   "side.done": { en: "Done", zh: "已完成", fi: "Valmis" },
+  "side.title": { en: "Tasks", zh: "任务目录", fi: "Tehtävät" },
+  // 报问题时报这个号，研究者据此定位是哪条样本
+  "side.ticket": { en: "Report ID", zh: "报障工单号", fi: "Ilmoitustunnus" },
 
   // ---------------------------------------------------------- 说话人
   "speaker.rateThis": { en: "Rate this speaker", zh: "请标注这位说话人的情绪",
@@ -179,6 +182,58 @@ const S = {
     en: "Local storage failed — check your browser settings and reload",
     zh: "本机存储写入失败，请检查浏览器设置后刷新",
     fi: "Paikallinen tallennus epäonnistui — tarkista selaimen asetukset ja lataa sivu uudelleen",
+  },
+
+  // ---------------------------------------------------------- 播放控件
+  "player.play": { en: "Play", zh: "播放媒体", fi: "Toista" },
+  "player.pause": { en: "Pause", zh: "暂停媒体", fi: "Tauko" },
+  "player.progress": { en: "Playback position", zh: "媒体播放进度",
+                       fi: "Toiston kohta" },
+  "player.unmute": { en: "Unmute", zh: "打开声音", fi: "Poista mykistys" },
+  "player.mute": { en: "Mute", zh: "静音", fi: "Mykistä" },
+  "player.rate": { en: "Playback speed", zh: "播放速度", fi: "Toistonopeus" },
+  "player.reload": { en: "Reload", zh: "重新加载", fi: "Lataa uudelleen" },
+  "player.familiarizeArea": { en: "Familiarize", zh: "熟悉材料",
+                              fi: "Tutustu aineistoon" },
+
+  // ---------------------------------------------------------- 其它提示
+  "app.title": { en: "XMER Annotation", zh: "XMER 标注工作台",
+                 fi: "XMER-merkintätyökalu" },
+  "app.refreshHint": {
+    en: "Refresh this page once tasks are assigned.",
+    zh: "分配完成后刷新本页即可开始。",
+    fi: "Päivitä sivu, kun tehtävät on jaettu.",
+  },
+  "app.loadingWorkspace": { en: "Loading your workspace…",
+                            zh: "正在读取你的标注工作区…",
+                            fi: "Ladataan työtilaasi…" },
+  "app.noTasks": { en: "No tasks assigned yet.",
+                   zh: "研究者尚未给你分配任务。",
+                   fi: "Sinulle ei ole vielä annettu tehtäviä." },
+  "err.needSecure": {
+    en: "Please open via localhost or HTTPS in a modern browser that supports Web Locks.",
+    zh: "请通过 localhost 或 HTTPS 打开，并使用支持 Web Locks 的现代浏览器。",
+    fi: "Avaa sivu localhostin tai HTTPS:n kautta selaimella, joka tukee Web Locks -rajapintaa.",
+  },
+  "err.otherTab": {
+    en: "Another tab is using the local workspace — close it and reload.",
+    zh: "另一个页面正在使用本地工作区，请关闭该页面后重新加载。",
+    fi: "Toinen välilehti käyttää paikallista työtilaa — sulje se ja lataa sivu uudelleen.",
+  },
+  "err.rememberTask": {
+    en: "Could not remember the current task; your annotations are still saved locally.",
+    zh: "无法记住当前任务；标注结果仍会保存在本地数据库。",
+    fi: "Nykyistä tehtävää ei voitu muistaa; merkinnät tallentuvat silti paikallisesti.",
+  },
+  "err.saveRound": {
+    en: "Could not save this round — please try again shortly.",
+    zh: "当前轮次保存失败，请稍后重试。",
+    fi: "Tämän kierroksen tallennus epäonnistui — yritä hetken kuluttua uudelleen.",
+  },
+  "err.waitSave": {
+    en: "Please wait for the current save to finish.",
+    zh: "请先等待当前记录保存完成。",
+    fi: "Odota, että nykyinen tallennus valmistuu.",
   },
 
   // ---------------------------------------------------------- 语言切换

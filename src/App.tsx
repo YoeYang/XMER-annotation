@@ -80,7 +80,7 @@ export default function App() {
     let cancelled = false;
     if (!navigator.locks) {
       setError(
-        "请通过 localhost 或 HTTPS 打开，并使用支持 Web Locks 的现代浏览器。",
+        t("err.needSecure"),
       );
       return;
     }
@@ -88,7 +88,7 @@ export default function App() {
       .request("xmer-local-editor", { ifAvailable: true }, async (lock) => {
         if (cancelled) return;
         if (!lock) {
-          setError("另一个页面正在使用本地工作区，请关闭该页面后重新加载。");
+          setError(t("err.otherTab"));
           return;
         }
         setLocked(true);
@@ -167,7 +167,7 @@ export default function App() {
     try {
       localStorage.setItem(key, value);
     } catch {
-      setError("无法记住当前任务；标注结果仍会保存在本地数据库。");
+      setError(t("err.rememberTask"));
     }
   };
 
@@ -179,7 +179,7 @@ export default function App() {
       setSelected(task.task_id);
       remember("xmer-task", task.task_id);
     } catch {
-      setError("当前轮次保存失败，请稍后重试。");
+      setError(t("err.saveRound"));
     } finally {
       setSwitching(false);
     }
@@ -215,7 +215,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div className="brand" aria-label="XMER 标注工作台">
+        <div className="brand" aria-label={t("app.title")}>
           <span className="brand-mark">
             <Activity size={23} />
           </span>
@@ -277,7 +277,7 @@ export default function App() {
                   await activeSession.current?.leave();
                   setReload((value) => value + 1);
                 } catch {
-                  setError("请先等待当前记录保存完成。");
+                  setError(t("err.waitSave"));
                 }
               })();
             }}
@@ -288,14 +288,14 @@ export default function App() {
       ) : ready && !tasks.length ? (
         <div className="loading-workspace">
           <Activity size={28} />
-          <p>研究者尚未给你分配任务。</p>
-          <small>分配完成后刷新本页即可开始。</small>
+          <p>{t("app.noTasks")}</p>
+          <small>{t("app.refreshHint")}</small>
         </div>
       ) : (
         !error && (
           <div className="loading-workspace">
             <Activity size={28} />
-            <p>正在读取你的标注工作区…</p>
+            <p>{t("app.loadingWorkspace")}</p>
           </div>
         )
       )}

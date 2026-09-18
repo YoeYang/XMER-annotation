@@ -84,7 +84,7 @@ export default function TaskSidebar({
         </button>
         {!collapsed && (
           <>
-            <h2>任务目录</h2>
+            <h2>{t("side.title")}</h2>
           </>
         )}
       </div>
@@ -204,7 +204,7 @@ export default function TaskSidebar({
 
           {selectedTask && selectedLocation && (
             <div className="sidebar-ticket">
-              <span>报障工单号</span>
+              <span>{t("side.ticket")}</span>
               <strong>
                 {ticketId(
                   annotator,

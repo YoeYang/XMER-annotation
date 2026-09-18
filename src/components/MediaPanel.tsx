@@ -193,7 +193,7 @@ export default function MediaPanel({
         {familiarization && (
           <button
             className="media-control-button"
-            aria-label={playing ? "暂停媒体" : "播放媒体"}
+            aria-label={playing ? t("player.pause") : t("player.play")}
             onClick={() => void session.toggleFamiliarization()}
           >
             {playing ? (
@@ -207,7 +207,7 @@ export default function MediaPanel({
           <input
             className="media-progress"
             type="range"
-            aria-label="媒体播放进度"
+            aria-label={t("player.progress")}
             min="0"
             max={view.duration || task.duration}
             step="0.01"
@@ -218,7 +218,7 @@ export default function MediaPanel({
           />
         ) : (
           <progress
-            aria-label="媒体播放进度"
+            aria-label={t("player.progress")}
             max={view.duration}
             value={view.time}
           />
@@ -228,7 +228,7 @@ export default function MediaPanel({
         </span>
         <button
           className="media-control-button"
-          aria-label={muted ? "打开声音" : "静音"}
+          aria-label={muted ? t("player.unmute") : t("player.mute")}
           title={silentModality ? t("media.noAudio") : undefined}
           disabled={silentModality}
           onClick={() => setMuted((value) => !value)}
@@ -237,7 +237,7 @@ export default function MediaPanel({
         </button>
         <label className="speed-label">
           <select
-            aria-label="播放速度"
+            aria-label={t("player.rate")}
             value={view.rate}
             onChange={(event) => session.setRate(Number(event.target.value))}
           >
@@ -254,7 +254,7 @@ export default function MediaPanel({
         <div className="inline-error" role="alert">
           <AlertCircle size={16} />
           <span>{view.error}</span>
-          <button onClick={onReload}>重新加载</button>
+          <button onClick={onReload}>{t("player.reload")}</button>
         </div>
       )}
     </section>
