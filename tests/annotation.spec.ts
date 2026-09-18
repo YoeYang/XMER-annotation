@@ -120,12 +120,13 @@ async function enterValence(page: Page) {
   await expect.poll(() => mediaTime(page)).toBe(0);
 }
 
+/** 在竖直标注条上按住。`ratio` 是**从上往下**的比例：0 为 +1、1 为 −1。 */
 async function pressBar(page: Page, ratio = 0.5) {
   const box = await page
     .locator(".dimension-row.active .dimension-bar")
     .boundingBox();
   if (!box) throw new Error("标注条不可见");
-  await page.mouse.move(box.x + box.width * ratio, box.y + box.height / 2);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height * ratio);
   await page.mouse.down();
   return box;
 }
@@ -235,10 +236,12 @@ test("初始鼠标光标不代表零值；可在任意位置开始", async ({ pa
   await expect(page.locator(".mouse-hints .mouse-left-button")).toHaveCount(1);
   await expect(page.locator(".mouse-hints")).toContainText("松开暂停");
   await expect(page.locator(".dimension-row.active .dimension-bar")).toHaveCSS(
-    "height",
-    "28px",
+    "width",
+    "30px",
   );
-  await expect(page.locator(".initial-cursor")).toHaveCSS("height", "58px");
+  // 光标是圆的，而且比尺子宽——压住时仍看得见落点
+  await expect(page.locator(".initial-cursor")).toHaveCSS("width", "52px");
+  await expect(page.locator(".initial-cursor")).toHaveCSS("height", "52px");
   await expect(page.getByRole("button", { name: /播放媒体|暂停媒体/ })).toHaveCount(0);
   await expect(page.getByLabel("媒体播放进度")).not.toHaveAttribute("type", "range");
   await expect(page.getByLabel("播放速度")).toBeEnabled();
@@ -284,7 +287,8 @@ test("松手暂停，再按仍需等待；移出端点继续采样", async ({ pa
   await enterValence(page);
   const box = await pressBar(page);
   await expect(page.locator(".sampling-strip")).toContainText("采样中");
-  await page.mouse.move(box.x - 40, box.y + box.height / 2);
+  // 拖到条子下方之外：纵向尺的底端是 −1
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height + 40);
   await expect(page.getByTestId("dimension-value")).toHaveText("-1.00");
   await page.mouse.up();
   const stopped = await mediaTime(page);
@@ -305,7 +309,8 @@ test("三页完整提交、两种渐变、固定条位置与完成筛选", async
   const arousalBox = await page
     .locator('[data-dimension="arousal"] .dimension-bar')
     .boundingBox();
-  expect(valenceBox!.y).toBeLessThan(arousalBox!.y);
+  // 两条尺并排竖立：效价在左、唤醒在右
+  expect(valenceBox!.x).toBeLessThan(arousalBox!.x);
   const nextBox = await page.locator(".next-step").boundingBox();
   const valenceGradient = await page
     .locator(".dimension-row.active .dimension-bar")

@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Frown, Smile, Moon, Zap, BookOpen } from "lucide-react";
+import { Annoyed, BookOpen, Frown, Smile, Zap } from "lucide-react";
 import { normalizeValue } from "../core/sampler";
 import type { Dimension, FlowPage, SessionView } from "../types";
 
@@ -13,11 +13,25 @@ interface Props {
   onGuide: () => void;
 }
 
-const labels: Record<Dimension, { title: string; low: string; high: string }> =
-  {
-    valence: { title: "效价 Valence", low: "负向 −1", high: "正向 +1" },
-    arousal: { title: "唤醒 Arousal", low: "冷静 −1", high: "激动 +1" },
-  };
+const labels: Record<
+  Dimension,
+  { title: string; top: string; middle: string; bottom: string }
+> = {
+  valence: {
+    title: "效价 Valence",
+    top: "正向 Positive +1",
+    middle: "中性 Neutral 0",
+    bottom: "负向 Negative −1",
+  },
+  arousal: {
+    // −1 是「无聊」而非「冷静」：平静是中点，两端分别是提不起劲与亢奋。
+    // 把 −1 写成「冷静」会把中点的含义挪到端点上，整条尺度跟着偏。
+    title: "唤醒 Arousal",
+    top: "激动 Excited +1",
+    middle: "平静 Calm 0",
+    bottom: "无聊 Bored −1",
+  },
+};
 
 function HoldMouse({ pressed = true }: { pressed?: boolean }) {
   return (
@@ -56,19 +70,22 @@ export default function AnnotationPad({
 }: Props) {
   const pointer = useRef<number | null>(null);
   const activeDimension = page === "familiarization" ? null : page;
-  const valueAt = (clientX: number, element: HTMLElement) => {
+  // 纵向取值：**上为 +1、下为 −1**，与视频下方那条曲线同向——
+  // 横着拖而曲线上下走，人得在脑子里转一次向，判断就慢一拍。
+  // normalizeValue 给的是「起点为 −1」，屏幕 y 轴向下，所以取反。
+  const valueAt = (clientY: number, element: HTMLElement) => {
     const box = element.getBoundingClientRect();
-    return normalizeValue(clientX - box.left, box.width);
+    return -normalizeValue(clientY - box.top, box.height);
   };
 
   const heading = (
     <div className="dimension-heading">
       <h2 id="dimension-title">
-        {activeDimension ? labels[activeDimension].title : "先熟悉"}
+        {activeDimension ? labels[activeDimension].title : "先熟悉 Familiarize"}
       </h2>
       <button className="annotation-guide" onClick={onGuide}>
         <BookOpen size={18} />
-        标注指南
+        标注指南 Guide
       </button>
     </div>
   );
@@ -79,7 +96,7 @@ export default function AnnotationPad({
         aria-label="熟悉材料"
       >
         {heading}
-        <p>看懂即可继续</p>
+        <p>看懂即可继续 · Continue when ready</p>
       </section>
     );
   }
@@ -95,12 +112,12 @@ export default function AnnotationPad({
       >
         <span className="status-dot" />
         {view.phase === "completed"
-          ? "已完成"
+          ? "已完成 Done"
           : sampling
-            ? "采样中…"
+            ? "采样中 Recording…"
             : view.phase === "hold-delay"
-              ? "准备中…"
-              : "暂停采样…"}
+              ? "准备中 Starting…"
+              : "暂停 Paused"}
       </div>
       <div className="dimension-bars">
         {dimensions.map((dimension) => {
@@ -112,22 +129,24 @@ export default function AnnotationPad({
               key={dimension}
             >
               <div className="dimension-label">{labels[dimension].title}</div>
+              <div className="bar-track">
               <div className="bar-semantics">
-                <span>
-                  {dimension === "valence" ? (
-                    <Frown aria-hidden="true" />
-                  ) : (
-                    <Moon aria-hidden="true" />
-                  )}
-                  {labels[dimension].low}
-                </span>
-                <span>
-                  {labels[dimension].high}
+                <span className="end-high">
                   {dimension === "valence" ? (
                     <Smile aria-hidden="true" />
                   ) : (
                     <Zap aria-hidden="true" />
                   )}
+                  {labels[dimension].top}
+                </span>
+                <span className="end-mid">{labels[dimension].middle}</span>
+                <span className="end-low">
+                  {dimension === "valence" ? (
+                    <Frown aria-hidden="true" />
+                  ) : (
+                    <Annoyed aria-hidden="true" />
+                  )}
+                  {labels[dimension].bottom}
                 </span>
               </div>
               <div
@@ -149,7 +168,7 @@ export default function AnnotationPad({
                   event.preventDefault();
                   pointer.current = event.pointerId;
                   event.currentTarget.setPointerCapture(event.pointerId);
-                  onPress(valueAt(event.clientX, event.currentTarget));
+                  onPress(valueAt(event.clientY, event.currentTarget));
                 }}
                 onPointerMove={(event) => {
                   if (
@@ -158,7 +177,7 @@ export default function AnnotationPad({
                     pointer.current !== event.pointerId
                   )
                     return;
-                  onMove(valueAt(event.clientX, event.currentTarget));
+                  onMove(valueAt(event.clientY, event.currentTarget));
                 }}
                 onPointerUp={(event) => {
                   if (pointer.current !== event.pointerId) return;
@@ -184,12 +203,13 @@ export default function AnnotationPad({
                       "bar-cursor " +
                       (view.value === null ? "initial-cursor" : "")
                     }
-                    style={{ left: (((view.value ?? 0) + 1) / 2) * 100 + "%" }}
+                    style={{ top: ((1 - (view.value ?? 0)) / 2) * 100 + "%" }}
                     aria-hidden="true"
                   >
                     {view.value === null && <HoldMouse />}
                   </span>
                 )}
+              </div>
               </div>
             </div>
           );
@@ -199,11 +219,11 @@ export default function AnnotationPad({
         <div id="hold-hint" className="mouse-hints">
           <span className="hold-hint">
             <HoldMouse />
-            任意位置按住
+            按住 Hold
           </span>
           <span className="hold-hint">
             <HoldMouse pressed={false} />
-            松开暂停
+            松开暂停 Release
           </span>
         </div>
         <output className="active-value" data-testid="dimension-value">

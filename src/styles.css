@@ -467,79 +467,99 @@ progress::-moz-progress-bar {
   background: #348865;
   box-shadow: 0 0 0 5px #34886515;
 }
+/* 两条竖直的尺：上为 +1、下为 −1，与视频下方那条曲线同向。
+   横着拖而曲线上下走，人得在脑子里转一次向，判断就慢一拍。 */
 .dimension-bars {
-  display: grid;
-  gap: 30px;
+  display: flex;
+  gap: 34px;
+  justify-content: center;
+  align-items: stretch;
 }
 .dimension-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
 }
 .dimension-label {
-  font-size: 16px;
-  margin-bottom: 10px;
+  font-size: 15px;
+  text-align: center;
+  white-space: nowrap;
 }
+/* 端点说明贴着尺子放，上中下三档各自对齐到它描述的位置 */
 .bar-semantics {
   display: flex;
+  flex-direction: column;
   justify-content: space-between;
+  align-items: flex-start;
+  font-size: 14px;
+  line-height: 1.35;
+  padding: 2px 0;
+  min-width: 118px;
+}
+.bar-semantics .end-mid {
+  color: var(--muted);
+  font-size: 13px;
+}
+.bar-track {
+  display: flex;
+  align-items: stretch;
   gap: 12px;
-  font-size: 20px;
-  margin-bottom: 14px;
+  flex: 1;
+  min-height: 260px;
 }
 .dimension-bar {
   position: relative;
-  height: 28px;
-  border-radius: 10px;
+  width: 30px;
+  border-radius: 15px;
   touch-action: none;
   user-select: none;
+  flex: none;
 }
 .bar-semantics span {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
 }
 .bar-semantics svg {
-  width: 23px;
-  height: 23px;
+  width: 22px;
+  height: 22px;
   flex: none;
+  stroke-width: 2.1;
 }
-.dimension-row.active[data-dimension="valence"]
-  .bar-semantics
-  span:first-child
-  svg {
-  color: #d96a66;
-  fill: #d96a66;
+/* 端点图标按**语义**上色，不靠 first-child / last-child——
+   那会跟着 DOM 顺序走，上下一调换就变成正向红、负向绿。
+
+   填充用浅色、线条（currentColor）用深色：两者同色的话，圆脸会被填成
+   一个纯色圆饼，笑和哭都看不出来。 */
+.dimension-row.active[data-dimension="valence"] .end-high svg {
+  color: #2f7a52;          /* 正向：绿色笑脸 */
+  fill: #b7e2ca;
 }
-.dimension-row.active[data-dimension="valence"]
-  .bar-semantics
-  span:last-child
-  svg {
-  color: #52a881;
-  fill: #52a881;
+.dimension-row.active[data-dimension="valence"] .end-low svg {
+  color: #a8322a;          /* 负向：红色哭脸 */
+  fill: #f6c4c1;
 }
-.dimension-row.active[data-dimension="arousal"]
-  .bar-semantics
-  span:first-child
-  svg {
-  color: #f4d76c;
-  fill: #f4d76c;
+.dimension-row.active[data-dimension="arousal"] .end-high svg {
+  color: #a8322a;          /* 激动 */
+  fill: #f6c4c1;
 }
-.dimension-row.active[data-dimension="arousal"]
-  .bar-semantics
-  span:last-child
-  svg {
-  color: #d8493d;
-  fill: #d8493d;
+.dimension-row.active[data-dimension="arousal"] .end-low svg {
+  color: #8a6f16;          /* 无聊 */
+  fill: #f7e6a8;
 }
 .dimension-row.active .dimension-bar {
-  cursor: ew-resize;
+  cursor: ns-resize;
   border: 2px solid #fff;
-  background: linear-gradient(90deg, #d96a66, #dfbd69 50%, #52a881);
+  /* to top：低值在下、高值在上，与刻度和曲线一致 */
+  background: linear-gradient(to top, #d96a66, #dfbd69 50%, #52a881);
   box-shadow:
     0 0 0 1px #88ac99,
     0 0 24px #5b947e30;
 }
 .dimension-row.active[data-dimension="arousal"] .dimension-bar {
-  background: linear-gradient(90deg, #f4d76c, #f39748 50%, #d8493d);
+  background: linear-gradient(to top, #f4d76c, #f39748 50%, #d8493d);
   box-shadow:
     0 0 0 1px #dba671,
     0 0 24px #e9a65135;
@@ -547,14 +567,15 @@ progress::-moz-progress-bar {
 .dimension-row.active .dimension-bar[aria-disabled="true"] {
   cursor: default;
 }
+/* 圆形且比尺子宽：手指/鼠标压住时仍看得见落点，也不至于遮住整条尺 */
 .bar-cursor {
   position: absolute;
-  top: 50%;
+  left: 50%;
   transform: translate(-50%, -50%);
-  width: 18px;
-  height: 80px;
+  width: 46px;
+  height: 46px;
   border: 3px solid #fff;
-  border-radius: 8px;
+  border-radius: 50%;
   background: #234f42;
   box-shadow:
     0 0 0 2px #234f42,
@@ -564,8 +585,8 @@ progress::-moz-progress-bar {
 .bar-cursor.initial-cursor {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 58px;
+  width: 52px;
+  height: 52px;
   background: #fff;
   color: #234f42;
   border: 0;
