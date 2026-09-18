@@ -388,6 +388,15 @@ progress::-moz-progress-bar {
   color: #a3ada7;
   background: #f1f3f0;
 }
+.modality-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--muted);
+  border-left: 2px solid var(--border);
+  padding-left: 0.6rem;
+}
+
 .rate-warning {
   color: #986126;
   font-size: 15px;

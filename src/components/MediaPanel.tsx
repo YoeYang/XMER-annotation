@@ -95,13 +95,15 @@ export default function MediaPanel({
      audio 与 text 根本没有画面，摆一张脸只会把判断往「这人长这样」上带，
      而这两轮要的恰恰是单凭语音韵律、单凭文字语义能读出什么。 */
   const showsSpeaker = ["face", "audiovisual"].includes(task.modality);
+  // audio 与 text 连姓名也不给：名字会把判断往「我认得这个人」上带，
+  // 而这两轮要的正是单凭语音韵律、单凭文字语义能读出什么。
   // 没静帧也没名字时整块不显示——空着的说明栏只占地方
   const caption =
     task.modality === "body"
       ? t("speaker.masked")
       : showsSpeaker && task.speaker_ref_src
         ? t("speaker.rateThis")
-        : task.speaker_name
+        : showsSpeaker && task.speaker_name
           ? t("speaker.name") + "：" + task.speaker_name
           : null;
   const familiarization = page === "familiarization";
@@ -124,6 +126,12 @@ export default function MediaPanel({
           </figure>
         )}
       </div>
+
+      {(task.modality === "audio" || task.modality === "text") && (
+        <p className="modality-hint" role="note">
+          {t(("hint." + task.modality) as Key)}
+        </p>
+      )}
 
       {task.modality === "audio" && view.rate === 0.1 && (
         <p className="rate-warning" role="status">

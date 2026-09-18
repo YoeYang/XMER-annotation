@@ -195,7 +195,7 @@ describe("文本与任务时间轴", () => {
   });
 });
 
-describe("文本一律呈现英文，按原文节奏逐词点亮", () => {
+describe("文本一律呈现原文，按自带的词级时间戳点亮", () => {
   const chinese: Transcript = {
     duration: 4,
     sentences: [
@@ -212,24 +212,25 @@ describe("文本一律呈现英文，按原文节奏逐词点亮", () => {
     ],
   };
 
-  it("中文素材显示译文，不显示原文", () => {
-    // 并排中英的话，懂中文的读中文、不懂的读英文，两拨人的节奏与理解
-    // 都不同，标出来的曲线没法放在一起比
+  it("中文素材显示中文原文，带着 text_en 也不改用译文", () => {
+    // 中文样本改由懂中文的标注者标。转录稿里的译文字段留着做后备，
+    // 但界面上不能拿它顶替原文。
     const words = transcriptLines(chinese, 9).flatMap((l) =>
       l.tokens.map((t) => t.text),
     );
-    expect(words).toEqual(["Don't", "dream", "anymore,", "study", "hard."]);
-    expect(words.join("")).not.toContain("做梦");
+    expect(words).toEqual(["别", "做梦", "了"]);
+    expect(words.join("")).not.toContain("dream");
   });
 
-  it("整句的起止跟着原文，句内均匀分配", () => {
-    // 句子 1.0–3.0 秒共 5 个词，每词 0.4 秒
+  it("点亮位置用原文自己的时间戳，不是句内均分", () => {
+    // 均分的话 1.9s 会亮 3 个词（1.0 + 2×0.4 = 1.8 已过）；
+    // 按真实时间戳，1.9s 时「了」还没到 2.3s，只亮 2 个。
     const at = (time: number) =>
       transcriptLines(chinese, time)[0].tokens.filter((t) => t.spoken).length;
-    expect(at(0.9)).toBe(0); // 整句还没开始
-    expect(at(1.0)).toBe(1); // 第一个词跟着句子起点亮
-    expect(at(1.9)).toBe(3); // 1.0 + 2×0.4 = 1.8 已过
-    expect(at(3.0)).toBe(5); // 句末全亮
+    expect(at(0.9)).toBe(0);
+    expect(at(1.0)).toBe(1); // 别 1.0
+    expect(at(1.9)).toBe(2); // 做梦 1.6 已过，了 2.3 未到
+    expect(at(2.3)).toBe(3); // 了 2.3
   });
 
   it("英文素材原样用自己的词级时间戳", () => {

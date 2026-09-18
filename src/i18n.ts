@@ -203,6 +203,23 @@ const S = {
   "guide.opEnter": { en: "Enter — next step", zh: "回车：下一步",
                      fi: "Enter — seuraava" },
 
+  // 模态提示：常驻在媒体上方，说清这一轮「凭什么判断」。
+  // 写在界面上而不是只写在指南里——指南只在开头看一次，
+  // 标到第三百条时人早就按自己的习惯走了。
+  "hint.audio": {
+    en: "Judge only from the main speaker's prosody — rate, intonation, "
+      + "volume, stress. Ignore background voices, music and other noise.",
+    zh: "仅依据主要说话人的语速、语调、音量、重音等 prosody 判断，"
+      + "忽略背景人声、背景音乐等干扰。",
+    fi: "Arvioi vain pääpuhujan prosodiasta: puhenopeus, intonaatio, "
+      + "voimakkuus, painotus. Jätä taustaäänet ja musiikki huomiotta.",
+  },
+  "hint.text": {
+    en: "Annotate at the pace the words light up.",
+    zh: "跟着文字点亮的节奏标注。",
+    fi: "Merkitse siinä tahdissa kuin sanat syttyvät.",
+  },
+
   // ---------------------------------------------------------- 媒体
   "media.noAudio": { en: "No audio in this modality", zh: "本模态无声音",
                      fi: "Tässä ei ole ääntä" },

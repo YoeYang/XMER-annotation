@@ -90,30 +90,18 @@ function needsSpace(before: string, after: string): boolean {
  * 逐词浮现动得太快不好标，且句子讲完后画面会空掉——尤其片尾有长静默时。
  */
 /**
- * 一律呈现英文，按原文的时间节奏逐词点亮。
+ * 一律呈现**原文**，按转录稿自带的词级时间戳逐词点亮。
  *
- * **不并排显示中英**：并排的话，懂中文的人读中文、不懂的读英文，两拨人
- * 看到的节奏和措辞都不同，标出来的曲线没法放在一起比——语言差异会混进
- * 标注者差异里，而这正是这项研究要分离的东西。
+ * 曾经改成过「中文素材一律显示 `text_en` 译文」，因为担心懂中文与不懂中文的
+ * 标注者读到的东西不同。那条路已经废弃：中文样本改由懂中文的标注者标，
+ * 译文转为后备。**译文还有个硬伤**——词级时间戳没法跨语言对齐，只能把整句
+ * 时长均分给英文词，实测点亮位置偏差中位 0.32s、最大 5.57s，
+ * 而这是个按时间连续标注的任务，点亮位置错了标出来的曲线就错了。
  *
- * 中文素材（chsims）用译文 `text_en`，词级时间戳没法跨语言对齐，
- * 就把整句的时间跨度**均匀分给译文的每个词**：句子的起止是准的，
- * 句内节奏是匀的。英文素材本来就带词级时间戳，原样用。
+ * 转录稿里的 `text_en` 字段保留不动，这里不再读它。
  */
 export function transcriptLines(doc: Transcript, time: number) {
   return doc.sentences.map((sentence) => {
-    if (sentence.text_en) {
-      const words = sentence.text_en.split(/\s+/).filter(Boolean);
-      const span = Math.max(sentence.end - sentence.start, 0.001);
-      const step = span / Math.max(words.length, 1);
-      return {
-        tokens: words.map((word, index) => ({
-          text: word,
-          lead: index ? " " : "",
-          spoken: sentence.start + index * step <= time,
-        })),
-      };
-    }
     let previous = "";
     return {
       tokens: sentence.tokens.map((token) => {
