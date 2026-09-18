@@ -136,14 +136,14 @@ const S = {
     fi: "Arvioi jatkuvasti sitä henkilöä, jonka kasvot on peitetty, pelkän kehonliikkeen ja asennon perusteella.",
   },
   "lead.audio": {
-    en: "Identify the target speaker from the reference photo, then rate their emotion continuously from tone of voice alone.",
-    zh: "请根据头像确认指定说话人，仅依据其语气语调，连续标注情绪变化。",
-    fi: "Tunnista kohdepuhuja viitekuvasta ja arvioi hänen tunnetilaansa jatkuvasti pelkän äänensävyn perusteella.",
+    en: "Judge the speaker's changing emotion from prosody alone — speech rate, intonation, loudness, stress.",
+    zh: "仅根据音频材料中的语速、语调、音量、重音等 prosody 元素，判断说话者连续的情感变化。",
+    fi: "Arvioi puhujan tunnetilan muutoksia pelkän prosodian perusteella — puhenopeus, intonaatio, äänenvoimakkuus, painotus.",
   },
   "lead.text": {
-    en: "Rate the emotion continuously from the wording alone, as the text appears.",
-    zh: "仅依据逐词呈现的文字内容，连续标注情绪变化。",
-    fi: "Arvioi tunnetilaa jatkuvasti pelkän sanamuodon perusteella sitä mukaa kun teksti ilmestyy.",
+    en: "Rate the emotion continuously from the meaning the words convey, as they appear.",
+    zh: "仅依据逐词呈现的文字所表达的语义信息，连续标注情绪变化。",
+    fi: "Arvioi tunnetilaa jatkuvasti sanojen välittämän merkityksen perusteella sitä mukaa kun ne ilmestyvät.",
   },
   "lead.audiovisual": {
     en: "Identify the target speaker from the reference photo, then rate their emotion continuously using both picture and sound.",

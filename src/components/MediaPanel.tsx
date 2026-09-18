@@ -90,6 +90,20 @@ export default function MediaPanel({
   }, [page, source, session]);
 
   const video = ["face", "body", "audiovisual"].includes(task.modality);
+  /* 只有画面里有人可认的模态才给静帧：
+     body 的那张脸正是画面里被遮住的部位，拿出来看等于把遮挡白做了；
+     audio 与 text 根本没有画面，摆一张脸只会把判断往「这人长这样」上带，
+     而这两轮要的恰恰是单凭语音韵律、单凭文字语义能读出什么。 */
+  const showsSpeaker = ["face", "audiovisual"].includes(task.modality);
+  // 没静帧也没名字时整块不显示——空着的说明栏只占地方
+  const caption =
+    task.modality === "body"
+      ? t("speaker.masked")
+      : showsSpeaker && task.speaker_ref_src
+        ? t("speaker.rateThis")
+        : task.speaker_name
+          ? t("speaker.name") + "：" + task.speaker_name
+          : null;
   const familiarization = page === "familiarization";
   const playing = familiarization && view.phase === "familiarizing";
   return (
@@ -98,26 +112,17 @@ export default function MediaPanel({
       aria-label={t(("modality." + task.modality) as Key)}
     >
       <div className="media-toolbar">
-        <figure className="speaker-ref">
-          {/* 身体模态不给静帧：那张脸正是画面里被遮住的部位，
-              拿出来看等于把遮挡白做了——标注者会照着静帧上的表情判断，
-              而这一轮要的恰恰是"看不见表情时，只凭肢体能读出什么"。 */}
-          {task.modality !== "body" && task.speaker_ref_src && (
-            <img
-              src={resolveAssetPath(task.speaker_ref_src)}
-              alt={t("speaker.target")}
-            />
-          )}
-          <figcaption>
-            {task.modality === "body"
-              ? t("speaker.masked")
-              : task.speaker_ref_src
-                ? t("speaker.rateThis")
-                : task.speaker_name
-                  ? t("speaker.name") + "：" + task.speaker_name
-                  : t("speaker.none")}
-          </figcaption>
-        </figure>
+        {caption && (
+          <figure className="speaker-ref">
+            {showsSpeaker && task.speaker_ref_src && (
+              <img
+                src={resolveAssetPath(task.speaker_ref_src)}
+                alt={t("speaker.target")}
+              />
+            )}
+            <figcaption>{caption}</figcaption>
+          </figure>
+        )}
       </div>
 
       {task.modality === "audio" && view.rate === 0.1 && (
