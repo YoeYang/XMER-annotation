@@ -1,0 +1,194 @@
+{
+  "S1458::face": {
+    "valence": {
+      "zh": "从 0 起步，笑意起来后升到 +0.80，句末表情收住又回落到 +0.30。注意结尾没有停在最高点——表情已经淡了，线就要跟着下来。",
+      "en": "Starts at 0, rises to +0.80 as the smile builds, then eases back to +0.30 as the expression settles. Note that it does not stay at the peak: the face has already relaxed, so the line comes down with it.",
+      "fi": "Alkaa nollasta, nousee +0.80:aan hymyn myötä ja laskee lopussa +0.30:een. Huomaa ettei viiva jää huipulle: ilme on jo rauhoittunut, joten viivan pitää laskea mukana."
+    },
+    "arousal": {
+      "zh": "唤醒反复上下转了 5 次，峰值 +0.67。表情样本的唤醒很少是一条直线。",
+      "en": "Arousal turns five times, peaking at +0.67. For facial material, arousal is rarely a straight line.",
+      "fi": "Vireystila kääntyy viidesti, huippu +0.67. Kasvomateriaalissa vireystila on harvoin suora viiva."
+    }
+  },
+  "S3231::face": {
+    "valence": {
+      "zh": "负面一路加深到 -0.94，零次转向。单调下行就画单调下行——不要为了「看起来在标注」而制造波动。",
+      "en": "Valence deepens steadily to -0.94 with no reversals. A monotone descent should be drawn as a monotone descent — do not manufacture wobble to look busy.",
+      "fi": "Valenssi syvenee tasaisesti -0.94:ään ilman käännöksiä. Tasainen lasku piirretään tasaisena laskuna — älä keksi heilahtelua näyttääksesi aktiiviselta."
+    },
+    "arousal": {
+      "zh": "效价一路向下，唤醒却冲到 +1.00 再回落。**两个维度是独立的**，别让唤醒跟着效价走。",
+      "en": "Valence falls throughout, yet arousal shoots to +1.00 and comes back. The two dimensions are independent — do not let arousal follow valence.",
+      "fi": "Valenssi laskee koko ajan, mutta vireystila kiipeää +1.00:aan ja palaa. Ulottuvuudet ovat riippumattomia — älä anna vireystilan seurata valenssia."
+    }
+  },
+  "S2194::body": {
+    "valence": {
+      "zh": "只看肢体。台词听着像惊喜，身体语言给的却是退缩，效价走到 -0.76。这一轮不许用台词或表情补全，**看到什么标什么**。",
+      "en": "Body only. The words sound delighted, but the posture reads as withdrawal and valence goes to -0.76. In this round you must not fill in from the dialogue or the face — annotate what you can actually see.",
+      "fi": "Vain keho. Sanat kuulostavat ilahtuneilta, mutta asento kertoo vetäytymisestä ja valenssi laskee -0.76:een. Tässä kierroksessa ei saa täydentää repliikeistä tai kasvoista — merkitse se minkä todella näet."
+    },
+    "arousal": {
+      "zh": "唤醒先升到 +0.72 再落回 +0.13：动作起来又停下。",
+      "en": "Arousal rises to +0.72 and falls back to +0.13: the movement starts and then stops.",
+      "fi": "Vireystila nousee +0.72:een ja palaa +0.13:een: liike käynnistyy ja pysähtyy."
+    }
+  },
+  "S1860::body": {
+    "valence": {
+      "zh": "8.9 秒的长片段，效价 4 次转向——情绪不是一次到位的，中间有反复。全程按住跟随，这就是连续标注要的粒度。",
+      "en": "An 8.9-second clip with four reversals in valence: the feeling does not arrive in one step, it wavers. Hold and follow throughout — this is the granularity continuous annotation asks for.",
+      "fi": "8,9 sekunnin pätkä, jossa valenssi kääntyy neljästi: tunne ei tule kerralla vaan aaltoilee. Pidä pohjassa koko ajan — tätä tarkkuutta jatkuva merkintä vaatii."
+    },
+    "arousal": {
+      "zh": "唤醒 5 次转向，峰值 +0.82。长片段里两个维度都会来回，不要标完开头就松手。",
+      "en": "Arousal turns five times, peaking at +0.82. In long clips both dimensions move back and forth — do not let go after the opening.",
+      "fi": "Vireystila kääntyy viidesti, huippu +0.82. Pitkissä pätkissä molemmat ulottuvuudet liikkuvat — älä irrota otetta alun jälkeen."
+    }
+  },
+  "S0131::audio": {
+    "valence": {
+      "zh": "只听**主要说话人**的语气。背景里有别的声音，不要被带走。愤怒逐步升级，效价一路压到 -1.00。",
+      "en": "Listen only to the main speaker's delivery. There are other sounds in the background — do not follow them. The anger escalates and valence is pushed all the way to -1.00.",
+      "fi": "Kuuntele vain pääpuhujan äänenkäyttöä. Taustalla on muita ääniä — älä seuraa niitä. Viha kiihtyy ja valenssi painuu -1.00:aan."
+    },
+    "arousal": {
+      "zh": "唤醒同步冲到 +1.00。愤怒是「效价负、唤醒高」的典型组合——两条线可以同时走到极端，方向相反。",
+      "en": "Arousal climbs to +1.00 at the same time. Anger is the classic negative-valence, high-arousal pair: both lines can reach the extremes at once, in opposite directions.",
+      "fi": "Vireystila nousee samaan aikaan +1.00:aan. Viha on klassinen negatiivisen valenssin ja korkean vireystilan yhdistelmä: molemmat viivat voivat olla ääripäissä yhtä aikaa, vastakkaisiin suuntiin."
+    }
+  },
+  "S2230::audio": {
+    "valence": {
+      "zh": "短促的惊喜。正面冲到 +0.57 就回落到 0——**情绪过去了线就要回来**，不能留在高位。",
+      "en": "A brief burst of delight. Valence jumps to +0.57 and returns to 0 — when the feeling passes, the line comes back; it must not be parked high.",
+      "fi": "Lyhyt ilon purkaus. Valenssi nousee +0.57:ään ja palaa nollaan — kun tunne menee ohi, viiva palaa; sitä ei jätetä korkealle."
+    },
+    "arousal": {
+      "zh": "唤醒到 +0.81，比效价高得多。惊呼的能量大，但正面程度有限。",
+      "en": "Arousal reaches +0.81, well above valence. The outburst carries a lot of energy but only moderate positivity.",
+      "fi": "Vireystila yltää +0.81:een, selvästi valenssin yli. Huudahduksessa on paljon energiaa mutta vain kohtalaista positiivisuutta."
+    }
+  },
+  "S0955::text": {
+    "valence": {
+      "zh": "只看文字的语义。随着句子展开，正面一路累积到 +0.71，没有反复。",
+      "en": "Semantics of the text only. As the sentence unfolds, positivity accumulates steadily to +0.71 with no reversals.",
+      "fi": "Vain tekstin merkitys. Lauseen edetessä positiivisuus kertyy tasaisesti +0.71:een ilman käännöksiä."
+    },
+    "arousal": {
+      "zh": "唤醒只到 +0.33。读起来是轻松的规划，不是激动——**效价高不等于唤醒高**。",
+      "en": "Arousal only reaches +0.33. It reads as relaxed planning, not excitement — high valence does not imply high arousal.",
+      "fi": "Vireystila yltää vain +0.33:een. Teksti on rentoa suunnittelua, ei innostusta — korkea valenssi ei tarkoita korkeaa vireystilaa."
+    }
+  },
+  "S2635::text": {
+    "valence": {
+      "zh": "负面随着关键词逐词出现而加深到 -0.61。**跟着点亮的节奏走**，不要读完整句再一次拉到底。",
+      "en": "Negativity deepens to -0.61 as the key words light up one by one. Follow the highlighting — do not read the whole sentence and then yank the line down in one go.",
+      "fi": "Negatiivisuus syvenee -0.61:een kun avainsanat syttyvät yksi kerrallaan. Seuraa korostusta — älä lue koko lausetta ja vedä viivaa kerralla alas."
+    },
+    "arousal": {
+      "zh": "唤醒只有 +0.25：痛心是低唤醒的负面情绪，和愤怒不同。",
+      "en": "Arousal stays at +0.25: distress is a low-arousal negative state, unlike anger.",
+      "fi": "Vireystila jää +0.25:een: suru on matalan vireystilan negatiivinen tila, toisin kuin viha."
+    }
+  },
+  "S0786::text": {
+    "valence": {
+      "zh": "自贬的句子，负面在中段到谷底 -0.64，句末回到 0。**曲线要回来**——句子讲完情绪松开了，停在谷底就是没跟住。",
+      "en": "A self-deprecating line: valence bottoms at -0.64 mid-way and returns to 0 at the end. The line has to come back — the feeling releases when the sentence ends, and staying at the bottom means you stopped following.",
+      "fi": "Itseään vähättelevä repliikki: valenssi käy pohjalla -0.64 puolivälissä ja palaa nollaan lopussa. Viivan on palattava — tunne laukeaa lauseen päättyessä, ja pohjalle jääminen tarkoittaa ettet enää seurannut."
+    },
+    "arousal": {
+      "zh": "唤醒到 +0.52 后缓和。",
+      "en": "Arousal reaches +0.52 and then eases.",
+      "fi": "Vireystila yltää +0.52:een ja rauhoittuu."
+    }
+  },
+  "S0344::text": {
+    "valence": {
+      "zh": "**这条是专门放的**：句子里有两个脏词，整句却是强烈的赞美，效价升到 +0.80。脏话在这里是强化词，不是负面信号。看见脏词就往负面拉，是文字这一轮最常见的错误。",
+      "en": "This one is here on purpose: the sentence contains two swear words yet is strong praise, and valence rises to +0.80. Here profanity is an intensifier, not a negative signal. Pulling the line down on sight of a swear word is the most common mistake in the text round.",
+      "fi": "Tämä on mukana tarkoituksella: lauseessa on kaksi kirosanaa, mutta se on voimakasta kehua ja valenssi nousee +0.80:aan. Kiroilu on tässä tehostin, ei negatiivinen signaali. Viivan vetäminen alas kirosanan nähdessä on tekstikierroksen yleisin virhe."
+    },
+    "arousal": {
+      "zh": "唤醒 +0.90：脏话确实抬高了强度，只是抬的是唤醒，不是负面。",
+      "en": "Arousal reaches +0.90: the profanity does raise intensity — but it raises arousal, not negativity.",
+      "fi": "Vireystila yltää +0.90:een: kiroilu nostaa intensiteettiä — mutta se nostaa vireystilaa, ei negatiivisuutta."
+    }
+  },
+  "S3106::audiovisual": {
+    "valence": {
+      "zh": "完整视频，画面、语音、文字都可以用。正面升到 +0.59。",
+      "en": "Full video — picture, voice and words are all available. Valence rises to +0.59.",
+      "fi": "Koko video — kuva, ääni ja sanat käytettävissä. Valenssi nousee +0.59:ään."
+    },
+    "arousal": {
+      "zh": "唤醒先起后落，结尾已经平复回 +0.13。",
+      "en": "Arousal rises then falls, settling back to +0.13 by the end.",
+      "fi": "Vireystila nousee ja laskee, päätyen takaisin +0.13:een."
+    }
+  },
+  "S0338::audiovisual": {
+    "valence": {
+      "zh": "**弱强度样本**。负面只到 -0.50，没有触底。不是每条都要标到 ±1——留出量程，真正强烈的样本才有地方去。",
+      "en": "A low-intensity sample. Valence only reaches -0.50 and never bottoms out. Not every clip should be pushed to ±1 — leave headroom so the genuinely strong ones have somewhere to go.",
+      "fi": "Matalan intensiteetin näyte. Valenssi yltää vain -0.50:een eikä käy pohjassa. Kaikkea ei pidä viedä ±1:een — jätä varaa, jotta aidosti voimakkaille näytteille jää tilaa."
+    },
+    "arousal": {
+      "zh": "唤醒却到 +0.90——语速快、态度强硬。**效价弱、唤醒强**，这种组合很常见。",
+      "en": "Arousal, however, reaches +0.90 — fast speech and a hard stance. Weak valence with strong arousal is a common combination.",
+      "fi": "Vireystila sen sijaan yltää +0.90:een — nopeaa puhetta ja jyrkkä asenne. Heikko valenssi ja vahva vireystila on yleinen yhdistelmä."
+    }
+  },
+  "S0747::audiovisual": {
+    "valence": {
+      "zh": "完整视频看下来是自嘲式的轻松，效价升到 +0.90。**标你看到的，不是任何预设标签**——这条在原数据集里是中性。",
+      "en": "Watched in full, this is relaxed self-mockery and valence rises to +0.90. Annotate what you observe, not any prior label — this clip is marked neutral in the source dataset.",
+      "fi": "Kokonaisuutena tämä on rentoa itseironiaa ja valenssi nousee +0.90:aan. Merkitse se minkä havaitset, älä valmista leimaa — lähdeaineistossa tämä on merkitty neutraaliksi."
+    },
+    "arousal": {
+      "zh": "唤醒同步升到 +1.00，中间 4 次转向。",
+      "en": "Arousal climbs to +1.00 alongside it, with four reversals on the way.",
+      "fi": "Vireystila nousee mukana +1.00:aan, matkalla neljä käännöstä."
+    }
+  },
+  "S1028::audiovisual": {
+    "valence": {
+      "zh": "数据集标签是负面，但完整视频里这是朋友间的玩笑，效价走到 +0.69。**完整视频能看到单模态看不到的东西**——这正是这一轮的意义。",
+      "en": "The dataset label is negative, but in full video this is banter between friends and valence goes to +0.69. The full clip shows what no single modality can — that is the point of this round.",
+      "fi": "Aineiston leima on negatiivinen, mutta koko videossa tämä on ystävien välistä naljailua ja valenssi nousee +0.69:ään. Koko pätkä näyttää sen mitä yksikään yksittäinen modaliteetti ei — juuri siksi tämä kierros on olemassa."
+    },
+    "arousal": {
+      "zh": "唤醒 5 次转向、峰值 +0.99：玩笑的节奏本来就是一起一伏。",
+      "en": "Arousal turns five times and peaks at +0.99: banter has that rise-and-fall rhythm by nature.",
+      "fi": "Vireystila kääntyy viidesti ja huippu on +0.99: naljailulla on luonnostaan tällainen aaltoileva rytmi."
+    }
+  },
+  "S2946::audiovisual": {
+    "valence": {
+      "zh": "平缓上行的正面，升到 +0.46 就停住。**正面不必都到 +1**。",
+      "en": "A gentle positive rise that stops at +0.46. Positive does not have to mean +1.",
+      "fi": "Loiva positiivinen nousu, joka pysähtyy +0.46:een. Positiivinen ei tarkoita aina +1:tä."
+    },
+    "arousal": {
+      "zh": "唤醒与效价几乎同步，同样停在 +0.46 附近，零次转向。",
+      "en": "Arousal tracks valence almost exactly, also settling near +0.46, with no reversals.",
+      "fi": "Vireystila seuraa valenssia lähes tarkalleen, asettuu myös noin +0.46:een, ei käännöksiä."
+    }
+  },
+  "S0917::audiovisual": {
+    "valence": {
+      "zh": "**真正的中性长这样**：整条线贴着 0，极差只有 0.06。没有情绪变化时线就该是平的——为了「看起来在标注」而制造波动是错的。",
+      "en": "This is what genuinely neutral looks like: the line hugs 0 with a total range of just 0.06. When nothing changes, the line should be flat — manufacturing movement to look active is wrong.",
+      "fi": "Näin aidosti neutraali näyttää: viiva pysyy nollassa, kokonaisvaihtelu vain 0,06. Kun mikään ei muutu, viivan kuuluu olla suora — liikkeen keksiminen aktiivisuuden vuoksi on väärin."
+    },
+    "arousal": {
+      "zh": "唤醒同样平，只在 +0.10 到 +0.24 之间。",
+      "en": "Arousal is equally flat, moving only between +0.10 and +0.24.",
+      "fi": "Vireystila on yhtä tasainen, liikkuu vain välillä +0.10–+0.24."
+    }
+  }
+}
