@@ -14,7 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .config import DIMENSIONS, MODALITIES, PHASES
+from .config import DIMENSIONS, LANGUAGES, MODALITIES, PHASES
 from .db import Base
 
 # 生产库用 JSONB（更紧凑、解析更快）；测试跑 SQLite 时退回通用 JSON
@@ -38,6 +38,9 @@ class Annotator(Base):
     token_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     display_name: Mapped[str | None] = mapped_column(Text)
     phase: Mapped[str] = mapped_column(Text, nullable=False)
+    # 语言标签。缺省 en——漏设的人只会拿到与语言无关的子任务，
+    # 而误标成 zh 的人会拿到读不懂的中文文本，坏得无声无息。
+    language: Mapped[str] = mapped_column(Text, nullable=False, default="en")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     trained_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
@@ -46,6 +49,7 @@ class Annotator(Base):
 
     __table_args__ = (
         CheckConstraint(_one_of("phase", PHASES), name="ck_annotators_phase"),
+        CheckConstraint(_one_of("language", LANGUAGES), name="ck_annotators_language"),
     )
 
 
@@ -97,6 +101,42 @@ class SampleNumber(Base):
     __table_args__ = (
         CheckConstraint(
             _one_of("status", ("active", "retired")), name="ck_sample_numbers_status"
+        ),
+    )
+
+
+class ReferenceTrace(Base):
+    """训练用的参考曲线：Yoe 本人对校准样本的标注，外加一段「为什么这么标」。
+
+    训练页在标注者把一个子任务的**两个维度都提交之后**，把他的曲线和这条
+    参考曲线画在一起。两维都交齐才放出来是硬要求，而且**由服务端拦**：
+    先看到效价的参考曲线再标唤醒，等于给了答案，而前端不显示拦不住
+    直接请求接口的人。
+
+    解释文字三语各存一列而不是一个 JSON：少了哪一种语言，数据库层面一眼可见，
+    而 JSON 里缺个键要等标注者打开训练页才发现。
+    """
+
+    __tablename__ = "reference_traces"
+
+    task_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("tasks.task_id"), primary_key=True
+    )
+    dimension: Mapped[str] = mapped_column(Text, primary_key=True)
+    samples: Mapped[list] = mapped_column(JsonCol, nullable=False)
+    # 这条曲线是从哪一次标注导出来的。参考曲线要能回溯到原始 attempt，
+    # 否则日后发现某条标错了，没法判断是导出错了还是当时就标成那样。
+    source_attempt_id: Mapped[str | None] = mapped_column(Text)
+    note_en: Mapped[str | None] = mapped_column(Text)
+    note_zh: Mapped[str | None] = mapped_column(Text)
+    note_fi: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            _one_of("dimension", DIMENSIONS), name="ck_reference_traces_dimension"
         ),
     )
 

@@ -7,6 +7,8 @@
   set-durations      素材重新处理后，按实测值校正任务时长
   plan               生成分配计划 CSV，可在表格软件里手改后再回填
   apply-plan         把（可能已手改的）计划 CSV 写入数据库
+  set-language       给账号打语言标签（zh 表示中英都能读）
+  import-reference   把某个账号的标注导入参考曲线表，供训练页对照
   status             查看账号与分配现状
 
 用法示例见 README。
@@ -30,13 +32,16 @@ from app.assignments import (
     tasks_by_sample_modality,
 )
 from app.auth import hash_token, new_token
-from app.config import MODALITIES, PHASES, load_settings
+from app.completion import latest_submissions
+from app.config import DIMENSIONS, LANGUAGES, MODALITIES, PHASES, load_settings
+from app.export import assemble_samples
 from app.db import create_all, create_db_engine, create_session_factory
 from app.models import (
     Annotator,
     Assignment,
     Attempt,
     AttemptFlag,
+    ReferenceTrace,
     SampleChunk,
     SampleNumber,
     Submission,
@@ -84,12 +89,14 @@ def cmd_create_annotators(args):
                     display_name=args.display_name_prefix
                     and f"{args.display_name_prefix}{number:02d}",
                     phase=args.phase,
+                    language=args.language,
                 )
             )
             rows.append(
                 {
                     "annotator_id": annotator_id,
                     "phase": args.phase,
+                    "language": args.language,
                     "token": token,
                     "url": f"{args.base_url.rstrip('/')}/?t={token}",
                 }
@@ -99,7 +106,7 @@ def cmd_create_annotators(args):
     out = Path(args.out)
     with out.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
-            handle, fieldnames=["annotator_id", "phase", "token", "url"]
+            handle, fieldnames=["annotator_id", "phase", "language", "token", "url"]
         )
         writer.writeheader()
         writer.writerows(rows)
@@ -443,6 +450,72 @@ def cmd_purge_superseded(args):
         )
 
 
+def cmd_set_language(args):
+    """给已有账号打语言标签。招募定下来之后按名单跑一遍。"""
+    factory = session_factory()
+    with factory() as session:
+        row = session.get(Annotator, args.annotator_id)
+        if row is None:
+            sys.exit(f"没有账号 {args.annotator_id}")
+        was, row.language = row.language, args.language
+        session.commit()
+    print(f"{args.annotator_id}: {was} → {args.language}")
+
+
+def cmd_import_reference(args):
+    """把某个账号已提交的标注导入参考曲线表。
+
+    **只取每条链的最新一版**：校准样本往往要反复标几遍才满意，
+    把旧版本导进去就等于拿一条被本人否掉的曲线去教别人。
+
+    解释文字用 `--notes` 给的 JSON 补：
+    `{"S1458::face": {"valence": {"zh": "…", "en": "…", "fi": "…"}}}`。
+    不给就先留空，日后再补——曲线比文字先定下来是常态。
+    """
+    notes = json.loads(Path(args.notes).read_text(encoding="utf-8")) if args.notes else {}
+    only = None
+    if args.tasks:
+        only = {
+            line.strip()
+            for line in Path(args.tasks).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        }
+
+    factory = session_factory()
+    written, skipped = 0, []
+    with factory() as session:
+        rows = latest_submissions(session, args.annotator_id)
+        for submission in rows:
+            if only is not None and submission.task_id not in only:
+                continue
+            samples = assemble_samples(session, submission.attempt_id)
+            if not samples:
+                skipped.append(f"{submission.task_id}/{submission.dimension}（无采样点）")
+                continue
+            note = notes.get(submission.task_id, {}).get(submission.dimension, {})
+            session.merge(
+                ReferenceTrace(
+                    task_id=submission.task_id,
+                    dimension=submission.dimension,
+                    samples=samples,
+                    source_attempt_id=submission.attempt_id,
+                    note_en=note.get("en"),
+                    note_zh=note.get("zh"),
+                    note_fi=note.get("fi"),
+                )
+            )
+            written += 1
+        session.commit()
+
+    print(f"已导入 {written} 条参考曲线（来自 {args.annotator_id}）")
+    if skipped:
+        print(f"跳过 {len(skipped)} 条：{skipped[:5]}")
+    if only is not None:
+        missing = only - {r.task_id for r in rows}
+        if missing:
+            print(f"⚠ 名单里有 {len(missing)} 个子任务该账号没有提交：{sorted(missing)[:5]}")
+
+
 def cmd_status(args):
     factory = session_factory()
     with factory() as session:
@@ -475,6 +548,10 @@ def main():
     create = sub.add_parser("create-annotators", help="批量生成标注账号")
     create.add_argument("--count", type=int, required=True)
     create.add_argument("--phase", choices=PHASES, required=True)
+    create.add_argument(
+        "--language", choices=LANGUAGES, default="en",
+        help="zh 表示中英都能读，可以拿 chsims 的 text 与 full；en 只读英文。",
+    )
     create.add_argument("--prefix", default="A", help="账号前缀，如 P3 生成 P3-01")
     create.add_argument("--display-name-prefix", default="")
     create.add_argument("--base-url", default="https://example.invalid/annotation")
@@ -548,6 +625,17 @@ def main():
     )
     purge.add_argument("--dry-run", action="store_true", help="只报告，不删")
     purge.set_defaults(func=cmd_purge_superseded)
+
+    lang = sub.add_parser("set-language", help="给账号打语言标签")
+    lang.add_argument("--annotator-id", required=True)
+    lang.add_argument("--language", choices=LANGUAGES, required=True)
+    lang.set_defaults(func=cmd_set_language)
+
+    ref = sub.add_parser("import-reference", help="导入参考曲线，供训练页对照")
+    ref.add_argument("--annotator-id", required=True, help="参考标注出自哪个账号")
+    ref.add_argument("--tasks", default="", help="只导入名单里的子任务，一行一个 task_id")
+    ref.add_argument("--notes", default="", help="解释文字 JSON")
+    ref.set_defaults(func=cmd_import_reference)
 
     status = sub.add_parser("status", help="查看账号与分配现状")
     status.set_defaults(func=cmd_status)

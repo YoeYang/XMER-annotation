@@ -109,3 +109,24 @@ class SubmissionOut(BaseModel):
     previous_submission_id: str | None
     submitted_at: UtcDateTime
     updated_at: UtcDateTime | None
+
+
+class ReferenceTraceOut(BaseModel):
+    """一条参考曲线，外加三语解释。
+
+    三语全给客户端，由界面按当前语言取——语言可以在页面上随时切换，
+    在服务端按请求时的语言定死的话，切语言就得重新取一次。
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    dimension: str
+    samples: list
+    note_en: str | None
+    note_zh: str | None
+    note_fi: str | None
+
+
+class ReferenceOut(BaseModel):
+    task_id: str
+    traces: list[ReferenceTraceOut]

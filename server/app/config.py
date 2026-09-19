@@ -10,6 +10,14 @@ MODALITIES = ("face", "body", "audio", "text", "audiovisual")
 与前端 `taskFlow.ts` 的 MODALITY_ORDER 一致，两边改动必须同步。
 """
 
+LANGUAGES = ("en", "zh")
+"""标注者的语言标签，决定两件事：训练页给哪一版，正式分配里能拿哪些子任务。
+
+**`zh` 的含义是「中英都能读」，不是「只读中文」**——中文标注者同样要标英文素材。
+chsims 的 `text` 与 `audiovisual` 只能分给 `zh`：那两个模态要读懂中文，
+其余模态与语言无关（面部与肢体本就无关，音频按设计只听韵律）。
+"""
+
 DIMENSIONS = ("valence", "arousal")
 """V3 一次只标一个维度。一个子任务要效价轮与唤醒轮都提交才算完成。"""
 
