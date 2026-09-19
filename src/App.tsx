@@ -11,13 +11,19 @@ import { SyncingRepository } from "./storage/syncingRepository";
 import type { SyncState } from "./storage/syncingRepository";
 import { captureToken, getToken } from "./auth";
 import { validateTasks } from "./core/textTimeline";
-import { locationOf, orderedTasks } from "./core/taskFlow";
+import {
+  allComplete,
+  completedCount,
+  locationOf,
+  orderedTasks,
+} from "./core/taskFlow";
 import { API_BASE } from "./config";
 import LangSwitch from "./components/LangSwitch";
 import { useLang } from "./LangContext";
 import type { Key } from "./i18n";
 import type { AnnotationSession } from "./core/session";
 import type { Attempt, Submission, Task } from "./types";
+import AllDone from "./components/AllDone";
 import TaskSidebar from "./components/TaskSidebar";
 import Workspace from "./components/Workspace";
 
@@ -55,6 +61,9 @@ export default function App() {
   const [reload, setReload] = useState(0);
   const [pendingTask, setPendingTask] = useState<Task | null>(null);
   const [sync, setSync] = useState<SyncState | null>(null);
+  // 全部标完时盖上收尾页。可以关掉回来复查，所以是一个独立的开关而不是
+  // 直接拿 allDone 当渲染条件——否则标完就再也打不开任何一条了。
+  const [celebrating, setCelebrating] = useState(false);
   const activeSession = useRef<AnnotationSession | null>(null);
 
   const refresh = useCallback(async () => {
@@ -212,6 +221,17 @@ export default function App() {
     return () => window.removeEventListener("keydown", confirm);
   }, [pendingTask, switching, selected]);
 
+  const doneCount = completedCount(tasks, attempts, submissions);
+  const allDone = allComplete(tasks, attempts, submissions);
+
+  // 从「还差一点」翻到「全齐了」的那一刻自动弹收尾页。挂在 allDone 上而不是
+  // 提交回调上：勾以服务端为准，等云端确认之后再庆祝才不会庆祝一场空。
+  const wasAllDone = useRef(false);
+  useEffect(() => {
+    if (allDone && !wasAllDone.current) setCelebrating(true);
+    wasAllDone.current = allDone;
+  }, [allDone]);
+
   const selectedTask = tasks.find((task) => task.task_id === selected);
   const selectedLocation = selectedTask
     ? locationOf(tasks, selectedTask.task_id)
@@ -274,7 +294,10 @@ export default function App() {
             onNext={() => {
               const index = tasks.indexOf(selectedTask);
               const next = tasks[index + 1];
+              // 最后一条的「下一个」通向收尾页。从前这里什么也不做，
+              // 标完最后一遍的人得不到任何了结的信号。
               if (next) requestSelect(next);
+              else setCelebrating(true);
             }}
             onReload={() => {
               void (async () => {
@@ -303,6 +326,10 @@ export default function App() {
             <p>{t("app.loadingWorkspace")}</p>
           </div>
         )
+      )}
+
+      {celebrating && (
+        <AllDone completed={doneCount} onBack={() => setCelebrating(false)} />
       )}
 
       {pendingTask && (

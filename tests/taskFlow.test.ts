@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  allComplete,
   buildTaskSections,
+  completedCount,
   dimensionSubmitted,
   taskComplete,
   ticketId,
@@ -118,5 +120,38 @@ describe("模态 section 与块内编号", () => {
         "valence",
       ),
     ).toBe(false);
+  });
+});
+
+describe("队列完成判定（收尾页靠它决定弹不弹）", () => {
+  const tasks = [task("face-1", "face", 0), task("audio-1", "audio", 1)];
+  const both = (taskId: string) => [
+    attempt(taskId + "-v", taskId, "valence"),
+    attempt(taskId + "-a", taskId, "arousal"),
+  ];
+  const subs = (ids: string[]) =>
+    ids.map((id, index) => submission("sub-" + index, id));
+
+  it("每条的两个维度都提交才算全完成", () => {
+    const attempts = [...both("face-1"), ...both("audio-1")];
+    const submissions = subs(attempts.map((a) => a.attempt_id));
+    expect(completedCount(tasks, attempts, submissions)).toBe(2);
+    expect(allComplete(tasks, attempts, submissions)).toBe(true);
+  });
+
+  it("少交一个维度就不算完成", () => {
+    const attempts = [...both("face-1"), ...both("audio-1")];
+    // audio-1 的唤醒没提交——试标时真丢过这一种，数据在库里却算不上完成
+    const submissions = subs(
+      attempts.map((a) => a.attempt_id).filter((id) => id !== "audio-1-a"),
+    );
+    expect(completedCount(tasks, attempts, submissions)).toBe(1);
+    expect(allComplete(tasks, attempts, submissions)).toBe(false);
+  });
+
+  it("空队列不算完成", () => {
+    // 素材还没下发时 tasks 是空的，「每一条都完成」在空集上恒真，
+    // 不挡住的话刚登录就撒花
+    expect(allComplete([], [], [])).toBe(false);
   });
 });

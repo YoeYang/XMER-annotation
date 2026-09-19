@@ -1088,12 +1088,63 @@ kbd {
   outline-offset: 1px;
 }
 
-/* 一律呈现英文，逐词点亮——明暗与中文素材那套一致 */
+/* 逐词点亮：未读 .text-scene p、已读 .text-scene .said，见上面那两条 */
 .transcript-line {
   margin: 0 0 14px;
 }
 .transcript-line:last-child {
   margin-bottom: 0;
 }
- color: #cfe0d7;
+
+/* 收尾页：全部标完时盖住工作区。撒花画布在下，卡片在上。 */
+.all-done {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(247, 248, 245, 0.94);
+}
+.all-done-confetti {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.all-done-card {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+  max-width: 26rem;
+  padding: 2rem 2.4rem 1.6rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 34px rgba(32, 60, 53, 0.13);
+  text-align: center;
+  color: var(--teal);
+}
+.all-done-card h2 {
+  margin: 0.4rem 0 0;
+  font-size: 1.24rem;
+}
+.all-done-count {
+  margin: 0.5rem 0 0;
+  font-size: 2.6rem;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.all-done-unit {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+.all-done-body {
+  margin: 0.7rem 0 1rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--ink);
 }

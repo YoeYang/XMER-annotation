@@ -220,6 +220,30 @@ const S = {
     fi: "Merkitse siinä tahdissa kuin sanat syttyvät.",
   },
 
+  // 收尾页
+  "done.title": {
+    en: "All done — thank you!",
+    zh: "全部标注完成，辛苦了！",
+    fi: "Kaikki valmista — kiitos!",
+  },
+  "done.count": {
+    en: "subtasks completed",
+    zh: "个子任务已完成",
+    fi: "osatehtävää valmiina",
+  },
+  "done.body": {
+    en: "Every subtask has both valence and arousal submitted. "
+      + "Nothing is left open — you can close this page.",
+    zh: "每个子任务的效价与唤醒都已提交，没有遗漏，可以关闭页面了。",
+    fi: "Jokaisesta osatehtävästä on lähetetty sekä valenssi että vireystila. "
+      + "Mitään ei jäänyt kesken — voit sulkea sivun.",
+  },
+  "done.back": {
+    en: "Back to the list",
+    zh: "返回任务目录",
+    fi: "Takaisin luetteloon",
+  },
+
   // ---------------------------------------------------------- 媒体
   "media.noAudio": { en: "No audio in this modality", zh: "本模态无声音",
                      fi: "Tässä ei ole ääntä" },

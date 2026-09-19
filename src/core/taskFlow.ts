@@ -92,6 +92,30 @@ export function taskComplete(
   );
 }
 
+/** 已完成的子任务数。两个维度都提交才算一条。 */
+export function completedCount(
+  tasks: Task[],
+  attempts: Attempt[],
+  submissions: Submission[],
+) {
+  return tasks.filter((task) => taskComplete(attempts, submissions, task.task_id))
+    .length;
+}
+
+/**
+ * 队列是否全部标完，用来决定弹不弹收尾页。
+ *
+ * **空队列不算完成**：素材还没下发时 `tasks` 是空的，
+ * 「每一条都完成了」在空集上恒真，会在刚登录、什么都没标的时候撒花。
+ */
+export function allComplete(
+  tasks: Task[],
+  attempts: Attempt[],
+  submissions: Submission[],
+) {
+  return tasks.length > 0 && completedCount(tasks, attempts, submissions) === tasks.length;
+}
+
 export function orderedTasks(tasks: Task[]) {
   return buildTaskSections(tasks).flatMap((section) =>
     section.tasks.map((row) => row.task),
