@@ -184,3 +184,67 @@ def test_import_skips_an_empty_trace(session: Session, annotator, task):
     with patch("manage.session_factory", return_value=lambda: session):
         cmd_import_reference(args)
     assert session.query(ReferenceTrace).count() == 0
+
+
+# --------------------------------------------------------------- 校对页接口
+
+
+def test_admin_listing_joins_media_and_notes(client, session, task):
+    """曲线、素材地址、解释必须一次取齐——分开取就要页面自己对 task_id，
+    对错了看不出来，文字会挂到别的样本下面。"""
+    from app.models import SampleNumber
+
+    session.add(SampleNumber(display_id="S0042", source_id=task.source_id))
+    seed_reference(session, task.task_id)
+    response = client.get(
+        "/api/admin/reference", headers={"Authorization": "Bearer admin-token"}
+    )
+    assert response.status_code == 200
+    entry = response.json()["tasks"][0]
+    assert entry["display_id"] == "S0042"
+    assert entry["src"] == task.src
+    assert [t["dimension"] for t in entry["traces"]] == ["valence", "arousal"]
+    # 采样点只留时间与取值；原始记录里的 attempt_id、wall_time 白撑响应
+    assert set(entry["traces"][0]["points"][0]) == {"t", "v"}
+
+
+def test_admin_listing_needs_the_token(client, session, task):
+    seed_reference(session, task.task_id)
+    assert client.get("/api/admin/reference").status_code == 401
+
+
+def test_note_edit_leaves_the_curve_alone(client, session, task):
+    """改文字的页面不该有能力覆盖曲线——曲线来自真实标注。"""
+    seed_reference(session, task.task_id)
+    before = session.get(ReferenceTrace, (task.task_id, "valence")).samples
+    response = client.put(
+        f"/api/admin/reference/{task.task_id}/valence",
+        headers={"Authorization": "Bearer admin-token"},
+        json={"note_zh": "改过了", "note_en": "edited", "note_fi": "muokattu"},
+    )
+    assert response.status_code == 200
+    session.expire_all()
+    row = session.get(ReferenceTrace, (task.task_id, "valence"))
+    assert row.note_zh == "改过了"
+    assert row.samples == before
+
+
+def test_blank_note_becomes_null(client, session, task):
+    """「还没写」和「写了个空」要分得开，否则导入脚本判断不了该不该覆盖。"""
+    seed_reference(session, task.task_id)
+    client.put(
+        f"/api/admin/reference/{task.task_id}/valence",
+        headers={"Authorization": "Bearer admin-token"},
+        json={"note_zh": "   ", "note_en": "", "note_fi": ""},
+    )
+    session.expire_all()
+    assert session.get(ReferenceTrace, (task.task_id, "valence")).note_zh is None
+
+
+def test_editing_a_missing_trace_is_not_found(client, session, task):
+    response = client.put(
+        f"/api/admin/reference/{task.task_id}/valence",
+        headers={"Authorization": "Bearer admin-token"},
+        json={"note_zh": "x"},
+    )
+    assert response.status_code == 404
