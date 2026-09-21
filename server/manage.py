@@ -23,7 +23,12 @@ from pathlib import Path
 
 from sqlalchemy import delete, func, select
 
-from app.allocation import AllocationShortfall, audit, build_plan
+from app.allocation import (
+    ISOLATION_MODES,
+    AllocationShortfall,
+    audit,
+    build_plan,
+)
 from app.assignments import (
     assign_display_ids,
     issue_numbers,
@@ -182,7 +187,9 @@ def cmd_import_tasks(args):
 
 def cmd_plan(args):
     pool = read_sample_ids(Path(args.pool))
-    anchors = read_sample_ids(Path(args.anchors))[: args.anchor_count]
+    # 锚点在 2026-09-21 的口径里已经取消，`--anchors` 只为回放老计划保留。
+    # 不给就是空集，全部样本一视同仁按 coverage 重复。
+    anchors = read_sample_ids(Path(args.anchors))[: args.anchor_count] if args.anchors else []
     missing = set(anchors) - set(pool)
     if missing:
         sys.exit(f"有 {len(missing)} 个锚点不在池子里，两份文件对不上号")
@@ -224,16 +231,23 @@ def cmd_plan(args):
             )
 
     report = audit(rows, list(MODALITIES))
-    anchor_rows = sum(1 for r in rows if r.is_anchor)
+    rule = {
+        "subtask": "同一人不重复同一 (样本, 模态)；跨模态可重复",
+        "strict": "同一人不重复见同一样本（已废弃的老口径）",
+        "off": "不设限（连重复子任务都不拦）",
+    }[args.isolation]
     print(f"计划已写入 {out}")
     print(f"  标注者      {len(annotators)} 人")
-    print(f"  池子        {len(pool)}（其中锚点 {len(anchors)}）× {len(MODALITIES)} 模态")
+    print(f"  池子        {len(pool)} 个样本 × {len(MODALITIES)} 模态")
+    print(f"  覆盖度      每个 (样本, 模态) 由 {args.coverage} 人各标一遍")
     print(f"  子任务      {len(rows)} 条，每人 {report['load_min']}~{report['load_max']} 条")
-    print(f"  锚点占比    {anchor_rows / len(rows):.1%}，每个锚点每模态由 {args.coverage} 人标注")
-    print(f"  隔离        {args.isolation}"
-          + ("（同一人不重复见同一样本）" if args.isolation == "strict" else "（未启用）"))
-    if report["isolation_violations"]:
-        print(f"  ⚠ 隔离被破坏的标注者：{report['isolation_violations'][:5]}")
+    print(f"  分配规则    {args.isolation}（{rule}）")
+    if report["duplicate_subtasks"]:
+        print(f"  ⚠ 拿到重复子任务的标注者：{report['duplicate_subtasks'][:5]}")
+    else:
+        print("  ✓ 无人拿到重复子任务")
+    print(f"  跨模态重复  {report['repeat_samples']} 人次"
+          f"（同一人看到同一视频的多个模态；按定稿口径允许）")
     print("  每人各模态条数区间：")
     for modality, (lo, hi) in report["modality_min_max"].items():
         print(f"    {modality:12s} {lo}~{hi}")
@@ -564,11 +578,12 @@ def main():
 
     plan = sub.add_parser("plan", help="生成分配计划 CSV")
     plan.add_argument("--pool", required=True)
-    plan.add_argument("--anchors", required=True)
+    plan.add_argument("--anchors", default="", help="已废弃；不给就是没有锚点")
     plan.add_argument("--anchor-count", type=int, default=300)
     plan.add_argument("--phase", choices=PHASES, required=True)
     plan.add_argument(
-        "--coverage", type=int, default=2, help="每个锚点由几人标注，1 等于没有重叠"
+        "--coverage", type=int, default=2,
+        help="每个 (样本, 模态) 由几人各标一遍。阶段一 2、阶段二 3。",
     )
     plan.add_argument("--seed", type=int, default=20260911)
     plan.add_argument(
@@ -576,8 +591,10 @@ def main():
         help="每人最多多少个子任务，0 表示不限。排不下会报错而不是悄悄截断。",
     )
     plan.add_argument(
-        "--isolation", choices=("strict", "off"), default="strict",
-        help="strict：同一人不重复见同一样本（V3 口径）；off：允许一人拿同一样本的多个模态。",
+        "--isolation", choices=ISOLATION_MODES, default="subtask",
+        help="subtask（默认，定稿口径）：同一人不重复同一 (样本, 模态)，"
+             "跨模态可重复；strict：同一人不重复见同一样本（已废弃）；"
+             "off：不设限，连重复子任务都不拦。",
     )
     plan.add_argument("--out", default="assignment_plan.csv")
     plan.set_defaults(func=cmd_plan)
