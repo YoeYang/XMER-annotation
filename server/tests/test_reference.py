@@ -248,3 +248,68 @@ def test_editing_a_missing_trace_is_not_found(client, session, task):
         json={"note_zh": "x"},
     )
     assert response.status_code == 404
+
+
+def test_import_keeps_notes_written_in_the_review_page(session: Session, annotator, task):
+    """整批重跑不许覆盖手写的解释。
+
+    解释多半是后来在校对页上一条条写的，而这条命令是按名单整批重跑的。
+    整行覆盖会把手写稿静悄悄抹掉，等打开训练页才发现。
+    """
+    from manage import cmd_import_reference
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    import json
+    import tempfile
+
+    submit(session, "A001", task.task_id, "valence", attempt="a1",
+           samples=[{"t": 0.0, "v": 0.5}])
+    session.add(
+        ReferenceTrace(task_id=task.task_id, dimension="valence",
+                       samples=[], note_zh="手写的解释")
+    )
+    session.commit()
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+        json.dump({task.task_id: {"valence": {"zh": "JSON 里的旧稿", "en": "draft"}}},
+                  handle)
+        notes_path = handle.name
+
+    args = SimpleNamespace(annotator_id="A001", tasks="", notes=notes_path,
+                           replace_notes=False)
+    with patch("manage.session_factory", return_value=lambda: session):
+        cmd_import_reference(args)
+
+    session.expire_all()
+    row = session.get(ReferenceTrace, (task.task_id, "valence"))
+    assert row.note_zh == "手写的解释"       # 没被覆盖
+    assert row.note_en == "draft"            # 空缺照样补上
+    assert row.samples == [{"t": 0.0, "v": 0.5}]  # 曲线仍会刷新
+
+
+def test_replace_notes_overrides_on_purpose(session: Session, annotator, task):
+    from manage import cmd_import_reference
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    import json
+    import tempfile
+
+    submit(session, "A001", task.task_id, "valence", attempt="a1",
+           samples=[{"t": 0.0, "v": 0.5}])
+    session.add(
+        ReferenceTrace(task_id=task.task_id, dimension="valence",
+                       samples=[], note_zh="手写的解释")
+    )
+    session.commit()
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+        json.dump({task.task_id: {"valence": {"zh": "换成这个"}}}, handle)
+        notes_path = handle.name
+
+    args = SimpleNamespace(annotator_id="A001", tasks="", notes=notes_path,
+                           replace_notes=True)
+    with patch("manage.session_factory", return_value=lambda: session):
+        cmd_import_reference(args)
+
+    session.expire_all()
+    assert session.get(ReferenceTrace, (task.task_id, "valence")).note_zh == "换成这个"

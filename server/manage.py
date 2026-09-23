@@ -485,6 +485,10 @@ def cmd_import_reference(args):
     解释文字用 `--notes` 给的 JSON 补：
     `{"S1458::face": {"valence": {"zh": "…", "en": "…", "fi": "…"}}}`。
     不给就先留空，日后再补——曲线比文字先定下来是常态。
+
+    **库里已有的解释默认不动。** 这条命令是按名单整批重跑的，而解释多半
+    是后来在校对页上一条条手写的；整行覆盖会把那些手写稿静悄悄抹掉，
+    等打开训练页才发现。要真想用 JSON 覆盖，显式给 `--replace-notes`。
     """
     notes = json.loads(Path(args.notes).read_text(encoding="utf-8")) if args.notes else {}
     only = None
@@ -496,7 +500,7 @@ def cmd_import_reference(args):
         }
 
     factory = session_factory()
-    written, skipped = 0, []
+    written, skipped, kept = 0, [], 0
     with factory() as session:
         rows = latest_submissions(session, args.annotator_id)
         for submission in rows:
@@ -507,21 +511,30 @@ def cmd_import_reference(args):
                 skipped.append(f"{submission.task_id}/{submission.dimension}（无采样点）")
                 continue
             note = notes.get(submission.task_id, {}).get(submission.dimension, {})
-            session.merge(
-                ReferenceTrace(
-                    task_id=submission.task_id,
-                    dimension=submission.dimension,
-                    samples=samples,
-                    source_attempt_id=submission.attempt_id,
-                    note_en=note.get("en"),
-                    note_zh=note.get("zh"),
-                    note_fi=note.get("fi"),
-                )
+            row = session.get(
+                ReferenceTrace, (submission.task_id, submission.dimension)
             )
+            if row is None:
+                row = ReferenceTrace(
+                    task_id=submission.task_id, dimension=submission.dimension
+                )
+                session.add(row)
+            row.samples = samples
+            row.source_attempt_id = submission.attempt_id
+            for lang in ("zh", "en", "fi"):
+                fresh = note.get(lang)
+                current = getattr(row, f"note_{lang}")
+                if fresh and (args.replace_notes or not current):
+                    setattr(row, f"note_{lang}", fresh)
+                elif current and not fresh:
+                    kept += 1
             written += 1
         session.commit()
 
     print(f"已导入 {written} 条参考曲线（来自 {args.annotator_id}）")
+    if kept:
+        print(f"保留了 {kept} 处库里已有的解释（JSON 里没有对应文字）。"
+              "要用 JSON 覆盖请加 --replace-notes。")
     if skipped:
         print(f"跳过 {len(skipped)} 条：{skipped[:5]}")
     if only is not None:
@@ -652,6 +665,10 @@ def main():
     ref.add_argument("--annotator-id", required=True, help="参考标注出自哪个账号")
     ref.add_argument("--tasks", default="", help="只导入名单里的子任务，一行一个 task_id")
     ref.add_argument("--notes", default="", help="解释文字 JSON")
+    ref.add_argument(
+        "--replace-notes", action="store_true",
+        help="用 JSON 覆盖库里已有的解释。默认只补空缺，不动已写好的。",
+    )
     ref.set_defaults(func=cmd_import_reference)
 
     status = sub.add_parser("status", help="查看账号与分配现状")

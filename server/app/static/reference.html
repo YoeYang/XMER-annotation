@@ -58,6 +58,8 @@
   textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
   .saved { color: var(--accent); font-size: 12px; }
+  .gap { margin-left: 8px; font-size: 11px; padding: 1px 7px; border-radius: 9px;
+    background: #fbf0e6; color: #a2531f; font-weight: 400; }
 </style>
 </head>
 <body>
@@ -281,9 +283,12 @@ function notes(task) {
     const block = document.createElement("div");
     block.className = "note-block";
     const colour = COLOUR[trace.dimension] || "#333";
+    const blank = ["zh", "en", "fi"].filter((k) => !trace["note_" + k]);
     block.innerHTML =
       `<h5><span class="swatch" style="background:${colour}"></span>` +
-      `${DIM[trace.dimension] || trace.dimension} · 解释</h5>`;
+      `${DIM[trace.dimension] || trace.dimension} · 解释` +
+      (blank.length ? `<span class="gap">缺 ${blank.join(" / ")}</span>` : "") +
+      `</h5>`;
 
     const langs = document.createElement("div");
     langs.className = "langs";
@@ -305,6 +310,11 @@ function notes(task) {
     const flag = document.createElement("span");
     flag.className = "saved";
     save.onclick = async () => {
+      const wiping = ["zh", "en", "fi"].filter(
+        (key) => trace["note_" + key] && !fields[key].value.trim(),
+      );
+      if (wiping.length &&
+          !confirm(`这会清空已有的 ${wiping.join(" / ")} 解释，确定吗？`)) return;
       save.disabled = true;
       flag.textContent = "";
       try {
@@ -324,6 +334,8 @@ function notes(task) {
           },
         );
         if (!response.ok) throw new Error("HTTP " + response.status);
+        for (const key of ["zh", "en", "fi"])
+          trace["note_" + key] = fields[key].value.trim() || null;
         flag.textContent = "已保存";
       } catch (error) {
         flag.textContent = "保存失败：" + error.message;
