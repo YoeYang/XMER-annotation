@@ -2,9 +2,10 @@
 
 两件事是硬要求，这批测试把它们钉死：
 
-1. **两个维度都提交之后才放出来**，而且由**服务端**拦。先看到效价的参考
-   曲线再标唤醒等于给了答案，而「前端不显示」拦不住直接请求接口的人——
-   训练结果要用来判断这个人标得准不准，能被绕开的闸等于没有。
+1. **整段两维都交齐才放出来**，而且由**服务端**拦（见文末的分段复盘）。
+   先看到参考曲线再标这一段后面几条等于给了答案，而「前端不显示」拦不住
+   直接请求接口的人——训练结果要用来判断这个人标得准不准，
+   能被绕开的闸等于没有。
 2. **只取每条链的最新一版**。校准样本往往要反复标几遍才满意，
    导进旧版本就是拿一条被本人否掉的曲线去教别人。
 """
@@ -104,52 +105,6 @@ def test_unknown_language_is_rejected(session: Session):
         session.commit()
 
 
-# --------------------------------------------------------------- 放出的时机
-
-
-def test_one_dimension_is_not_enough(client, session, trainee, task):
-    seed_reference(session, task.task_id)
-    submit(session, "T001", task.task_id, "valence", attempt="a1")
-    response = client.get(f"/api/training/reference/{task.task_id}", headers=trainee)
-    assert response.status_code == 403
-
-
-def test_both_dimensions_open_it(client, session, trainee, task):
-    seed_reference(session, task.task_id)
-    submit(session, "T001", task.task_id, "valence", attempt="a1")
-    submit(session, "T001", task.task_id, "arousal", attempt="a2", minutes=1)
-    response = client.get(f"/api/training/reference/{task.task_id}", headers=trainee)
-    assert response.status_code == 200
-    body = response.json()
-    # 效价在前、唤醒在后，与标注顺序一致；按插入顺序返回会是反的
-    assert [t["dimension"] for t in body["traces"]] == ["valence", "arousal"]
-    assert body["traces"][0]["note_zh"] == "参考说明"
-
-
-def test_non_training_accounts_never_see_it(client, session, assigned, task):
-    """正式阶段的账号一律拒绝：校准样本若混进正式队列，更不能给看。"""
-    seed_reference(session, task.task_id)
-    submit(session, "A001", task.task_id, "valence", attempt="a1")
-    submit(session, "A001", task.task_id, "arousal", attempt="a2", minutes=1)
-    response = client.get(f"/api/training/reference/{task.task_id}", headers=assigned)
-    assert response.status_code == 403
-
-
-def test_unassigned_task_is_not_found(client, session, trainee, second_task):
-    seed_reference(session, second_task.task_id)
-    response = client.get(
-        f"/api/training/reference/{second_task.task_id}", headers=trainee
-    )
-    assert response.status_code == 404
-
-
-def test_task_without_a_reference_says_so(client, session, trainee, task):
-    submit(session, "T001", task.task_id, "valence", attempt="a1")
-    submit(session, "T001", task.task_id, "arousal", attempt="a2", minutes=1)
-    response = client.get(f"/api/training/reference/{task.task_id}", headers=trainee)
-    assert response.status_code == 404
-
-
 # --------------------------------------------------------------- 导入
 
 
@@ -192,72 +147,13 @@ def test_import_skips_an_empty_trace(session: Session, annotator, task):
 # --------------------------------------------------------------- 校对页接口
 
 
-def test_admin_listing_joins_media_and_notes(client, session, task):
-    """曲线、素材地址、解释必须一次取齐——分开取就要页面自己对 task_id，
-    对错了看不出来，文字会挂到别的样本下面。"""
-    from app.models import SampleNumber
-
-    session.add(SampleNumber(display_id="S0042", source_id=task.source_id))
-    seed_reference(session, task.task_id)
-    response = client.get(
-        "/api/admin/reference", headers={"Authorization": "Bearer admin-token"}
-    )
-    assert response.status_code == 200
-    entry = response.json()["tasks"][0]
-    assert entry["display_id"] == "S0042"
-    assert entry["src"] == task.src
-    assert [t["dimension"] for t in entry["traces"]] == ["valence", "arousal"]
-    # 采样点只留时间与取值；原始记录里的 attempt_id、wall_time 白撑响应
-    assert set(entry["traces"][0]["points"][0]) == {"t", "v"}
-
-
-def test_admin_listing_needs_the_token(client, session, task):
-    seed_reference(session, task.task_id)
-    assert client.get("/api/admin/reference").status_code == 401
-
-
-def test_note_edit_leaves_the_curve_alone(client, session, task):
-    """改文字的页面不该有能力覆盖曲线——曲线来自真实标注。"""
-    seed_reference(session, task.task_id)
-    before = session.get(ReferenceTrace, (task.task_id, "valence")).samples
-    response = client.put(
-        f"/api/admin/reference/{task.task_id}/valence",
-        headers={"Authorization": "Bearer admin-token"},
-        json={"note_zh": "改过了", "note_en": "edited", "note_fi": "muokattu"},
-    )
-    assert response.status_code == 200
-    session.expire_all()
-    row = session.get(ReferenceTrace, (task.task_id, "valence"))
-    assert row.note_zh == "改过了"
-    assert row.samples == before
-
-
-def test_blank_note_becomes_null(client, session, task):
-    """「还没写」和「写了个空」要分得开，否则导入脚本判断不了该不该覆盖。"""
-    seed_reference(session, task.task_id)
-    client.put(
-        f"/api/admin/reference/{task.task_id}/valence",
-        headers={"Authorization": "Bearer admin-token"},
-        json={"note_zh": "   ", "note_en": "", "note_fi": ""},
-    )
-    session.expire_all()
-    assert session.get(ReferenceTrace, (task.task_id, "valence")).note_zh is None
-
-
-def test_editing_a_missing_trace_is_not_found(client, session, task):
-    response = client.put(
-        f"/api/admin/reference/{task.task_id}/valence",
-        headers={"Authorization": "Bearer admin-token"},
-        json={"note_zh": "x"},
-    )
-    assert response.status_code == 404
-
-
-def test_import_keeps_notes_written_in_the_review_page(session: Session, annotator, task):
+def test_import_keeps_notes_written_by_hand(session: Session, annotator, task):
     """整批重跑不许覆盖手写的解释。
 
-    解释多半是后来在校对页上一条条写的，而这条命令是按名单整批重跑的。
-    整行覆盖会把手写稿静悄悄抹掉，等打开训练页才发现。
+    解释是一条条手写的，而这条命令是按名单整批重跑的。整行覆盖会把手写稿
+    静悄悄抹掉，等打开训练页才发现。校对页已经撤掉，改文字的正路是改
+    `plans/reference_notes.json` 再带 --replace-notes 重跑——那条路更要
+    分得清「补空缺」和「覆盖」。
     """
     from manage import cmd_import_reference
     from types import SimpleNamespace

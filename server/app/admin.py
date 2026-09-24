@@ -21,12 +21,11 @@ from .models import (
     Assignment,
     Attempt,
     AttemptFlag,
-    ReferenceTrace,
     SampleNumber,
     Submission,
     Task,
 )
-from .config import DIMENSIONS, MODALITIES, PHASES
+from .config import MODALITIES, PHASES
 from .timeutils import to_utc_iso
 
 router = APIRouter(prefix="/api/admin")
@@ -410,95 +409,3 @@ def flag_attempt(
     )
     session.commit()
     return {"attempt_id": attempt_id, "flag": flag}
-
-
-# --------------------------------------------------------------- 参考曲线校对
-
-
-@router.get("/reference/ui", include_in_schema=False)
-def reference_ui() -> FileResponse:
-    """参考曲线校对页。和 /ui 一样是空壳，令牌在页面里填。"""
-    return FileResponse(Path(__file__).parent / "static" / "reference.html")
-
-
-@router.get("/reference", dependencies=[Depends(require_admin)])
-def read_reference_traces(session: Session = Depends(get_session)) -> dict:
-    """全部参考曲线，连着素材信息一起给。
-
-    曲线、媒体地址、解释文字必须**一次取齐**：分三个接口的话，校对页要自己
-    把三份数据按 task_id 对起来，而对错了看不出来——文字会挂到别的样本下面。
-    """
-    numbers = {
-        source_id: display_id
-        for display_id, source_id in session.execute(
-            select(SampleNumber.display_id, SampleNumber.source_id)
-        )
-    }
-    rank = {name: index for index, name in enumerate(MODALITIES)}
-    order = {name: index for index, name in enumerate(DIMENSIONS)}
-
-    rows: dict[str, dict] = {}
-    for trace, task in session.execute(
-        select(ReferenceTrace, Task).join(Task, Task.task_id == ReferenceTrace.task_id)
-    ):
-        entry = rows.setdefault(
-            task.task_id,
-            {
-                "task_id": task.task_id,
-                "display_id": numbers.get(task.source_id),
-                "source_id": task.source_id,
-                "modality": task.modality,
-                "src": task.src,
-                "duration": task.duration,
-                "speaker_ref_src": task.speaker_ref_src,
-                "traces": [],
-            },
-        )
-        entry["traces"].append(
-            {
-                "dimension": trace.dimension,
-                # 只给时间与取值。采样点原始记录里还有 attempt_id、wall_time 之类，
-                # 对校对毫无用处，白白把响应撑大十倍。
-                "points": [
-                    {"t": s.get("media_time"), "v": s.get("value")}
-                    for s in trace.samples
-                    if s.get("is_valid", True)
-                ],
-                "note_zh": trace.note_zh,
-                "note_en": trace.note_en,
-                "note_fi": trace.note_fi,
-                "source_attempt_id": trace.source_attempt_id,
-            }
-        )
-
-    for entry in rows.values():
-        entry["traces"].sort(key=lambda t: order.get(t["dimension"], len(order)))
-    return {
-        "tasks": sorted(
-            rows.values(),
-            key=lambda e: (rank.get(e["modality"], len(rank)), e["display_id"] or ""),
-        )
-    }
-
-
-@router.put("/reference/{task_id}/{dimension}", dependencies=[Depends(require_admin)])
-def write_reference_note(
-    task_id: str,
-    dimension: str,
-    session: Session = Depends(get_session),
-    note_zh: str = Body("", embed=True),
-    note_en: str = Body("", embed=True),
-    note_fi: str = Body("", embed=True),
-) -> dict:
-    """改解释文字。**只动文字，不动曲线**——曲线来自真实标注，
-    改文字的页面不该有能力覆盖它。"""
-    trace = session.get(ReferenceTrace, (task_id, dimension))
-    if trace is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "没有这条参考曲线。")
-    # 空串存成 NULL：库里「这条还没写」和「这条写了个空」要分得开
-    trace.note_zh = note_zh.strip() or None
-    trace.note_en = note_en.strip() or None
-    trace.note_fi = note_fi.strip() or None
-    trace.updated_at = datetime.now()
-    session.commit()
-    return {"task_id": task_id, "dimension": dimension, "saved": True}

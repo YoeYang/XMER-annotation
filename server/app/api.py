@@ -29,8 +29,6 @@ from .schemas import (
     DebriefOut,
     DebriefPairOut,
     MeOut,
-    ReferenceOut,
-    ReferenceTraceOut,
     SubmissionOut,
     SubmitIn,
     TaskOut,
@@ -304,46 +302,6 @@ def export_own_data(
     session: Session = Depends(get_session),
 ) -> dict:
     return build_export(session, annotator)
-
-
-@router.get("/training/reference/{task_id}", response_model=ReferenceOut)
-def read_reference(
-    task_id: str,
-    session: Session = Depends(get_session),
-    annotator: Annotator = Depends(current_annotator),
-):
-    """训练页的参考曲线。**两个维度都提交之后才放出来。**
-
-    这道闸必须在服务端。先看效价的参考曲线再标唤醒等于给了答案，
-    而「前端不显示」拦不住直接请求接口的人——训练结果要用来判断
-    这个人标得准不准，能被绕开的闸等于没有。
-
-    只对 `training` 阶段的账号开放：正式阶段的样本没有参考曲线，
-    真有的话（校准样本混进了正式队列）也绝不能给标注者看。
-    """
-    if annotator.phase != "training":
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "参考曲线只在训练阶段提供。"
-        )
-    _assigned_task(session, annotator, task_id)
-    if task_id not in completed_tasks(session, annotator.annotator_id):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            "两个维度都提交之后才能查看参考曲线。",
-        )
-    rows = list(
-        session.scalars(
-            select(ReferenceTrace).where(ReferenceTrace.task_id == task_id)
-        )
-    )
-    if not rows:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "该样本没有参考曲线。")
-    order = {name: index for index, name in enumerate(DIMENSIONS)}
-    rows.sort(key=lambda row: order.get(row.dimension, len(order)))
-    return ReferenceOut(
-        task_id=task_id,
-        traces=[ReferenceTraceOut.model_validate(row) for row in rows],
-    )
 
 
 def _points(samples: list[dict]) -> list[dict]:
