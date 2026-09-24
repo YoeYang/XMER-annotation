@@ -116,6 +116,26 @@ export function allComplete(
   return tasks.length > 0 && completedCount(tasks, attempts, submissions) === tasks.length;
 }
 
+/**
+ * 已经整段标完的模态。训练阶段用它决定什么时候展开这一段的复盘。
+ *
+ * **按段而不是按条**：一次看十几条对照记不住，看完就忘；一次看两条、
+ * 紧接着进入下一个模态，刚标过的东西还在手上。
+ */
+export function completeModalities(
+  tasks: Task[],
+  attempts: Attempt[],
+  submissions: Submission[],
+): Modality[] {
+  return buildTaskSections(tasks)
+    .filter((section) =>
+      section.tasks.every((row) =>
+        taskComplete(attempts, submissions, row.task.task_id),
+      ),
+    )
+    .map((section) => section.modality);
+}
+
 export function orderedTasks(tasks: Task[]) {
   return buildTaskSections(tasks).flatMap((section) =>
     section.tasks.map((row) => row.task),

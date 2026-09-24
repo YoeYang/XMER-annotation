@@ -14,6 +14,7 @@ import { captureToken, getToken } from "./auth";
 import { validateTasks } from "./core/textTimeline";
 import {
   allComplete,
+  completeModalities,
   completedCount,
   locationOf,
   orderedTasks,
@@ -23,8 +24,9 @@ import LangSwitch from "./components/LangSwitch";
 import { useLang } from "./LangContext";
 import type { Key } from "./i18n";
 import type { AnnotationSession } from "./core/session";
-import type { Attempt, Submission, Task } from "./types";
+import type { Attempt, Modality, Submission, Task } from "./types";
 import AllDone from "./components/AllDone";
+import Debrief from "./components/Debrief";
 import GuideBook from "./components/GuideBook";
 import TaskSidebar from "./components/TaskSidebar";
 import Workspace from "./components/Workspace";
@@ -69,6 +71,8 @@ export default function App() {
   // 指南页。训练账号第一次进来自动打开一次，之后靠顶栏的按钮。
   // 「看过了」按账号记——换人用同一台机器时，新来的人还得看一遍。
   const [book, setBook] = useState(false);
+  // 正在回看哪一段的曲线对照
+  const [reviewing, setReviewing] = useState<Modality | null>(null);
   const activeSession = useRef<AnnotationSession | null>(null);
 
   const refresh = useCallback(async () => {
@@ -242,6 +246,30 @@ export default function App() {
     }
   };
 
+  // 一段刚刚标完就展开这一段的对照。挂在「完成的模态集合」上而不是提交回调：
+  // 完成以服务端确认为准，等云端确认之后再复盘才不会拿本地的半成品作数。
+  //
+  // 「看过了」必须记在 localStorage 而不是内存：只记在内存的话，刷新一次
+  // 就把已经看过的那几段重弹一遍，而标注者刷新是常事（断网重连、换设备）。
+  const training = profile?.phase === "training";
+  const finished = training
+    ? completeModalities(tasks, attempts, submissions)
+    : [];
+  const reviewedKey = annotator ? "xmer-reviewed-" + annotator : "";
+  useEffect(() => {
+    if (!training || !reviewedKey || book) return;
+    const seen = new Set(remembered(reviewedKey, "").split(",").filter(Boolean));
+    const fresh = finished.find((modality) => !seen.has(modality));
+    if (!fresh) return;
+    seen.add(fresh);
+    try {
+      localStorage.setItem(reviewedKey, [...seen].join(","));
+    } catch {
+      /* 存不下最多下次再弹一遍，不值得打断 */
+    }
+    setReviewing(fresh);
+  }, [finished.join(","), training, reviewedKey, book]);
+
   const doneCount = completedCount(tasks, attempts, submissions);
   const allDone = allComplete(tasks, attempts, submissions);
 
@@ -302,6 +330,7 @@ export default function App() {
             submissions={submissions}
             disabled={switching}
             onSelect={requestSelect}
+            onReview={training ? setReviewing : undefined}
           />
           <Workspace
             key={annotator + selected + reload}
@@ -362,6 +391,10 @@ export default function App() {
             }
           />
         </div>
+      )}
+
+      {reviewing && (
+        <Debrief modality={reviewing} onClose={() => setReviewing(null)} />
       )}
 
       {celebrating && (

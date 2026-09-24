@@ -53,7 +53,10 @@ def seed_reference(session, task_id):
         session.add(
             ReferenceTrace(
                 task_id=task_id, dimension=dimension,
-                samples=[{"t": 0.0, "v": value}],
+                # 参考曲线存的是**原始采样记录**（导入时直接来自 assemble_samples），
+                # 不是画图用的瘦身形式。夹具写成瘦身形式的话，接口那层的字段名
+                # 取错了测试也照样绿。
+                samples=[{"media_time": 0.0, "value": value, "is_valid": True}],
                 note_zh="参考说明", note_en="reference note", note_fi="viite",
             )
         )
@@ -313,3 +316,82 @@ def test_replace_notes_overrides_on_purpose(session: Session, annotator, task):
 
     session.expire_all()
     assert session.get(ReferenceTrace, (task.task_id, "valence")).note_zh == "换成这个"
+
+
+# --------------------------------------------------------------- 分段复盘
+
+
+def seed_block(session, trainee_id, tasks, *, complete=True):
+    """给一位训练标注者铺一段：分配 + 两维提交 + 参考曲线。"""
+    for index, task in enumerate(tasks):
+        # trainee 夹具已经分配过第一条，重复插入会撞唯一约束
+        existing = session.query(Assignment).filter_by(
+            annotator_id=trainee_id, task_id=task.task_id, phase="training"
+        ).one_or_none()
+        if existing:
+            existing.order_index = index
+        else:
+            session.add(
+                Assignment(annotator_id=trainee_id, task_id=task.task_id,
+                           phase="training", order_index=index)
+            )
+        seed_reference(session, task.task_id)
+        dims = ("valence", "arousal") if complete else ("valence",)
+        for dimension in dims:
+            submit(session, trainee_id, task.task_id, dimension,
+                   attempt=f"{task.task_id}-{dimension}", minutes=index,
+                   samples=[{"media_time": 0.0, "value": 0.3, "is_valid": True}])
+    session.commit()
+
+
+def test_debrief_returns_both_curves_and_the_note(client, session, trainee, task):
+    """素材、自己的曲线、参考曲线、解释一次取齐——分几个接口的话前端要自己
+    按 task_id 对起来，对错了看不出来，曲线会画到别的样本下面。"""
+    seed_block(session, "T001", [task])
+    response = client.get("/api/training/debrief/face", headers=trainee)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["modality"] == "face"
+    item = body["items"][0]
+    assert item["src"] == task.src
+    pair = item["pairs"][0]
+    assert pair["dimension"] == "valence"
+    assert pair["mine"] == [{"t": 0.0, "v": 0.3}]
+    assert pair["reference"] == [{"t": 0.0, "v": -0.8}]
+    assert pair["note_zh"] == "参考说明"
+
+
+def test_debrief_waits_until_the_whole_block_is_done(client, session, trainee, task):
+    """一条没标完就不给整段——先看到参考曲线再标后面几条等于给了答案。"""
+    seed_block(session, "T001", [task], complete=False)
+    response = client.get("/api/training/debrief/face", headers=trainee)
+    assert response.status_code == 403
+    assert "没标完" in response.json()["detail"]
+
+
+def test_debrief_is_training_only(client, session, assigned, task):
+    seed_reference(session, task.task_id)
+    submit(session, "A001", task.task_id, "valence", attempt="v")
+    submit(session, "A001", task.task_id, "arousal", attempt="a", minutes=1)
+    assert client.get("/api/training/debrief/face", headers=assigned).status_code == 403
+
+
+def test_debrief_of_an_unassigned_modality_is_not_found(client, session, trainee, task):
+    seed_block(session, "T001", [task])
+    assert client.get("/api/training/debrief/audio", headers=trainee).status_code == 404
+
+
+def test_debrief_rejects_an_unknown_modality(client, session, trainee, task):
+    seed_block(session, "T001", [task])
+    assert client.get("/api/training/debrief/nose", headers=trainee).status_code == 404
+
+
+def test_debrief_keeps_the_queue_order(client, session, trainee, task, second_task):
+    """两条的先后要和队列一致，否则复盘里看到的顺序和刚标的顺序对不上。"""
+    second_task.modality = "face"
+    session.commit()
+    seed_block(session, "T001", [second_task, task])
+    body = client.get("/api/training/debrief/face", headers=trainee).json()
+    assert [i["task_id"] for i in body["items"]] == [
+        second_task.task_id, task.task_id
+    ]

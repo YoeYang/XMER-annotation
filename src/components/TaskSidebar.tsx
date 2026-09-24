@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Film,
   Headphones,
+  LineChart,
   ScanFace,
   Type,
   UserRound,
@@ -29,6 +30,8 @@ interface Props {
   submissions: Submission[];
   onSelect: (task: Task) => void;
   disabled: boolean;
+  /** 训练阶段才给。整段标完之后可以回看这一段的曲线对照。 */
+  onReview?: (modality: Modality) => void;
 }
 
 const icons: Record<Modality, typeof Headphones> = {
@@ -47,6 +50,7 @@ export default function TaskSidebar({
   submissions,
   onSelect,
   disabled,
+  onReview,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [filter, setFilter] = useState<"all" | "todo">("all");
@@ -165,6 +169,16 @@ export default function TaskSidebar({
                       {completeInSection}/{section.tasks.length}
                     </span>
                   </button>
+                  {onReview &&
+                    completeInSection === section.tasks.length && (
+                      <button
+                        className="section-review"
+                        onClick={() => onReview(section.modality)}
+                      >
+                        <LineChart size={14} />
+                        {t("debrief.review")}
+                      </button>
+                    )}
                   {open && (
                     <div className="task-section-items">
                       {visible.map(({ task, position }) => {

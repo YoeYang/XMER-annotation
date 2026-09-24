@@ -130,3 +130,32 @@ class ReferenceTraceOut(BaseModel):
 class ReferenceOut(BaseModel):
     task_id: str
     traces: list[ReferenceTraceOut]
+
+
+class DebriefPairOut(BaseModel):
+    """一个维度上的两条曲线：标注者自己的，和参考的。"""
+
+    dimension: str
+    # 只给 (t, v)。完整采样记录里还有 attempt_id、wall_time 之类，
+    # 画图用不上，白白把响应撑大十倍。
+    mine: list[dict]
+    reference: list[dict]
+    note_en: str | None
+    note_zh: str | None
+    note_fi: str | None
+
+
+class DebriefItemOut(BaseModel):
+    task_id: str
+    display_id: str | None
+    modality: str
+    src: str
+    duration: float
+    speaker_ref_src: str | None
+    order_index: int
+    pairs: list[DebriefPairOut]
+
+
+class DebriefOut(BaseModel):
+    modality: str
+    items: list[DebriefItemOut]

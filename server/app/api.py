@@ -6,7 +6,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .auth import current_annotator, get_session
-from .completion import completed_tasks
+from .assignments import numbers_by_sample
+from .completion import completed_tasks, latest_submissions
 from .config import DIMENSIONS, MODALITIES
 from .export import assemble_samples, build_export
 from .models import (
@@ -24,6 +25,9 @@ from .schemas import (
     AttemptOut,
     ChunkIn,
     ChunkOut,
+    DebriefItemOut,
+    DebriefOut,
+    DebriefPairOut,
     MeOut,
     ReferenceOut,
     ReferenceTraceOut,
@@ -340,3 +344,107 @@ def read_reference(
         task_id=task_id,
         traces=[ReferenceTraceOut.model_validate(row) for row in rows],
     )
+
+
+def _points(samples: list[dict]) -> list[dict]:
+    """采样点瘦身成画图要的两列。"""
+    return [
+        {"t": s.get("media_time"), "v": s.get("value")}
+        for s in samples
+        if s.get("is_valid", True)
+    ]
+
+
+@router.get("/training/debrief/{modality}", response_model=DebriefOut)
+def read_debrief(
+    modality: str,
+    session: Session = Depends(get_session),
+    annotator: Annotator = Depends(current_annotator),
+):
+    """一个模态段的复盘：这一段每条素材的两条曲线与参考曲线、以及解释。
+
+    **按模态分段而不是每条一放**：一次看 11 条记不住，看完就忘；
+    一次看两条、紧接着进入下一个模态，回顾的东西还在手上。
+
+    **整段都交齐才放**，理由与单条那个接口相同——先看到参考曲线再标后面几条
+    等于给了答案。这道闸在服务端，前端不显示拦不住直接请求接口的人。
+
+    一次把素材、自己的曲线、参考曲线、解释全取齐：分几个接口的话，前端要自己
+    按 task_id 把几份数据对起来，而对错了看不出来——曲线会画到别的样本下面。
+    """
+    if annotator.phase != "training":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "复盘只在训练阶段提供。")
+    if modality not in MODALITIES:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "没有这个模态。")
+
+    assigned = list(
+        session.execute(
+            select(Task, Assignment.order_index)
+            .join(Assignment, Assignment.task_id == Task.task_id)
+            .where(
+                Assignment.annotator_id == annotator.annotator_id,
+                Assignment.phase == annotator.phase,
+                Task.modality == modality,
+            )
+            .order_by(Assignment.order_index)
+        )
+    )
+    if not assigned:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "这个模态没有分配给你的任务。")
+
+    done = completed_tasks(session, annotator.annotator_id)
+    pending = [task.task_id for task, _ in assigned if task.task_id not in done]
+    if pending:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"这一段还有 {len(pending)} 条没标完，两个维度都提交后才能看对比。",
+        )
+
+    numbers = numbers_by_sample(session)
+    latest = {
+        (row.task_id, row.dimension): row
+        for row in sorted(
+            latest_submissions(session, annotator.annotator_id),
+            key=lambda r: r.revision,
+        )
+    }
+    references = {
+        (row.task_id, row.dimension): row
+        for row in session.scalars(
+            select(ReferenceTrace).where(
+                ReferenceTrace.task_id.in_([task.task_id for task, _ in assigned])
+            )
+        )
+    }
+
+    items = []
+    for task, order_index in assigned:
+        pairs = []
+        for dimension in DIMENSIONS:
+            submission = latest.get((task.task_id, dimension))
+            reference = references.get((task.task_id, dimension))
+            pairs.append(
+                DebriefPairOut(
+                    dimension=dimension,
+                    mine=_points(assemble_samples(session, submission.attempt_id))
+                    if submission
+                    else [],
+                    reference=_points(reference.samples) if reference else [],
+                    note_en=reference.note_en if reference else None,
+                    note_zh=reference.note_zh if reference else None,
+                    note_fi=reference.note_fi if reference else None,
+                )
+            )
+        items.append(
+            DebriefItemOut(
+                task_id=task.task_id,
+                display_id=numbers.get(task.source_id),
+                modality=task.modality,
+                src=task.src,
+                duration=task.duration,
+                speaker_ref_src=task.speaker_ref_src,
+                order_index=order_index,
+                pairs=pairs,
+            )
+        )
+    return DebriefOut(modality=modality, items=items)

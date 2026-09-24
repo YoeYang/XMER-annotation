@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allComplete,
+  completeModalities,
   buildTaskSections,
   completedCount,
   dimensionSubmitted,
@@ -153,5 +154,38 @@ describe("队列完成判定（收尾页靠它决定弹不弹）", () => {
     // 素材还没下发时 tasks 是空的，「每一条都完成」在空集上恒真，
     // 不挡住的话刚登录就撒花
     expect(allComplete([], [], [])).toBe(false);
+  });
+});
+
+describe("整段完成判定（分段复盘靠它决定什么时候展开）", () => {
+  const tasks = [
+    task("face-1", "face", 0),
+    task("face-2", "face", 1),
+    task("audio-1", "audio", 0),
+  ];
+  const both = (taskId: string) => [
+    attempt(taskId + "-v", taskId, "valence"),
+    attempt(taskId + "-a", taskId, "arousal"),
+  ];
+  const subs = (ids: string[]) =>
+    ids.map((id, index) => submission("sub-" + index, id));
+
+  it("一段里还有一条没标完就不算这一段完成", () => {
+    const attempts = [...both("face-1"), ...both("audio-1")];
+    const submissions = subs(attempts.map((a) => a.attempt_id));
+    expect(completeModalities(tasks, attempts, submissions)).toEqual(["audio"]);
+  });
+
+  it("两条都标完这一段才出现", () => {
+    const attempts = [...both("face-1"), ...both("face-2"), ...both("audio-1")];
+    const submissions = subs(attempts.map((a) => a.attempt_id));
+    expect(completeModalities(tasks, attempts, submissions)).toEqual([
+      "face",
+      "audio",
+    ]);
+  });
+
+  it("什么都没标时一段都没有", () => {
+    expect(completeModalities(tasks, [], [])).toEqual([]);
   });
 });

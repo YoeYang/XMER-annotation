@@ -258,6 +258,28 @@ const S = {
   "book.close": { en: "Back to annotation", zh: "返回标注",
                   fi: "Takaisin merkintään" },
 
+  // ------------------------------------------------------------ 分段复盘
+  "debrief.title": { en: "How you rated", zh: "你标得怎么样",
+                     fi: "Näin arvioit" },
+  "debrief.lead": {
+    en: "Your curve against the reference for this block.",
+    zh: "这一段里，你的曲线与参考曲线的对照。",
+    fi: "Käyräsi viitekäyrän rinnalla tässä osiossa.",
+  },
+  "debrief.mine": { en: "Yours (solid)", zh: "你标的（实线）",
+                    fi: "Sinun (yhtenäinen)" },
+  "debrief.reference": { en: "Reference (dashed)", zh: "参考（虚线）",
+                         fi: "Viite (katkoviiva)" },
+  "debrief.continue": { en: "Continue", zh: "继续", fi: "Jatka" },
+  "debrief.close": { en: "Close", zh: "关闭", fi: "Sulje" },
+  "debrief.loading": { en: "Loading…", zh: "载入中…", fi: "Ladataan…" },
+  "debrief.failed": {
+    en: "Could not load the comparison.",
+    zh: "对比载入失败。",
+    fi: "Vertailua ei voitu ladata.",
+  },
+  "debrief.review": { en: "Compare", zh: "看对比", fi: "Vertaa" },
+
   "guide.dims": { en: "Dimensions", zh: "标注维度", fi: "Ulottuvuudet" },
   "guide.valence": {
     en: "−1 negative (sad, angry) · 0 neutral · +1 positive (happy, cheerful)",
