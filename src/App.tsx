@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
+  BookOpen,
   CornerDownLeft,
   MousePointer,
   MousePointerClick,
@@ -24,6 +25,7 @@ import type { Key } from "./i18n";
 import type { AnnotationSession } from "./core/session";
 import type { Attempt, Submission, Task } from "./types";
 import AllDone from "./components/AllDone";
+import GuideBook from "./components/GuideBook";
 import TaskSidebar from "./components/TaskSidebar";
 import Workspace from "./components/Workspace";
 
@@ -64,6 +66,9 @@ export default function App() {
   // 全部标完时盖上收尾页。可以关掉回来复查，所以是一个独立的开关而不是
   // 直接拿 allDone 当渲染条件——否则标完就再也打不开任何一条了。
   const [celebrating, setCelebrating] = useState(false);
+  // 指南页。训练账号第一次进来自动打开一次，之后靠顶栏的按钮。
+  // 「看过了」按账号记——换人用同一台机器时，新来的人还得看一遍。
+  const [book, setBook] = useState(false);
   const activeSession = useRef<AnnotationSession | null>(null);
 
   const refresh = useCallback(async () => {
@@ -221,6 +226,22 @@ export default function App() {
     return () => window.removeEventListener("keydown", confirm);
   }, [pendingTask, switching, selected]);
 
+  const seenKey = annotator ? "xmer-guide-seen-" + annotator : "";
+  useEffect(() => {
+    if (!ready || !seenKey || profile?.phase !== "training") return;
+    if (remembered(seenKey, "") === "yes") return;
+    setBook(true);
+  }, [ready, seenKey, profile?.phase]);
+
+  const closeBook = () => {
+    setBook(false);
+    try {
+      if (seenKey) localStorage.setItem(seenKey, "yes");
+    } catch {
+      /* 隐私模式下存不下，最多下次再弹一遍，不值得打断 */
+    }
+  };
+
   const doneCount = completedCount(tasks, attempts, submissions);
   const allDone = allComplete(tasks, attempts, submissions);
 
@@ -256,6 +277,10 @@ export default function App() {
               </span>
             </div>
           )}
+          <button className="ghost book-open" onClick={() => setBook(true)}>
+            <BookOpen size={15} />
+            {t("book.reopen")}
+          </button>
           <LangSwitch />
         </div>
       </header>
@@ -326,6 +351,17 @@ export default function App() {
             <p>{t("app.loadingWorkspace")}</p>
           </div>
         )
+      )}
+
+      {book && (
+        <div className="book-backdrop">
+          <GuideBook
+            onStart={closeBook}
+            startLabel={
+              remembered(seenKey, "") === "yes" ? "book.close" : "book.start"
+            }
+          />
+        </div>
       )}
 
       {celebrating && (

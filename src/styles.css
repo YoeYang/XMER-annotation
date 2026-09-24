@@ -68,6 +68,13 @@ figure {
 .brand strong span {
   display: none;
 }
+/* 顶栏右侧那一组。此前没有任何规则，div 默认 block，
+   账号名和语言切换是竖着堆的；再加一个按钮只会更明显。 */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
 .identity-text strong {
   font-size: 15px;
   color: var(--muted);
@@ -1147,4 +1154,166 @@ kbd {
   font-size: 0.9rem;
   line-height: 1.5;
   color: var(--ink);
+}
+
+/* 五模态指南页。盖住工作区、自己滚动——它比弹窗长得多，
+   让整页跟着滚会把顶栏和侧栏一起带走。 */
+.book-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  overflow-y: auto;
+  background: rgba(247, 248, 245, 0.97);
+  padding: 2.2rem 1rem 3rem;
+}
+.guide-book {
+  max-width: 54rem;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 2rem 2.2rem 1.6rem;
+  box-shadow: 0 14px 40px rgba(32, 60, 53, 0.1);
+}
+.book-head h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+  color: var(--teal);
+}
+.book-head p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 0.92rem;
+}
+.book-section {
+  margin-top: 1.9rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--border);
+}
+.book-section h2 {
+  margin: 0 0 0.8rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.book-dims {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.9rem;
+}
+.dim-card {
+  border-left: 3px solid var(--teal);
+  padding: 0.1rem 0 0.1rem 0.9rem;
+}
+.dim-card.arousal {
+  border-left-color: #c06a3f;
+}
+.dim-card h3 {
+  margin: 0 0 0.3rem;
+  font-size: 1rem;
+}
+.dim-card .scale {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+.dim-card .caveat {
+  margin: 0.4rem 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.book-steps {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.book-ops {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.4rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.book-ops span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.book-note {
+  margin: 0 0 1rem;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  background: #f2f6f3;
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+}
+.book-modalities {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.9rem;
+}
+.modality-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+}
+.modality-card h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--teal);
+}
+.modality-card p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+.modality-card .watch {
+  margin-top: 0.5rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.book-actions {
+  margin-top: 1.8rem;
+  display: flex;
+  justify-content: flex-end;
+}
+.book-actions .primary {
+  background: var(--teal);
+  color: #fff;
+  border: 1px solid var(--teal);
+  border-radius: 8px;
+  padding: 0.55rem 1.6rem;
+  font-size: 0.95rem;
+}
+/* 低调的次级按钮。AllDone 的「返回任务目录」也用它，
+   此前同样没有规则，是个裸 button。 */
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 5px 12px;
+  font-size: 13px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.ghost:hover {
+  color: var(--teal);
+  border-color: var(--teal);
+}
+@media (max-width: 640px) {
+  .guide-book {
+    padding: 1.4rem 1.1rem 1.2rem;
+  }
 }

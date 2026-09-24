@@ -152,6 +152,112 @@ const S = {
     fi: "Tunnista kohdepuhuja viitekuvasta ja arvioi hänen tunnetilaansa jatkuvasti sekä kuvan että äänen perusteella.",
   },
 
+  // ------------------------------------------------------------ 指南页
+  // 与标注时那个弹窗分工不同：弹窗只讲当前模态，这一页把五个摆在一起，
+  // 让人看见它们的区别——那正是这个数据集要研究的东西。
+  "book.intro": {
+    en: "You will rate how a speaker's emotion changes over time, on two "
+      + "dimensions, from five different kinds of material. Read this page "
+      + "once before you start; you can reopen it at any time.",
+    zh: "你要在两个维度上，连续标注说话人的情绪随时间的变化，材料有五种。"
+      + "开始前先看一遍这一页，之后随时可以再打开。",
+    fi: "Arvioit puhujan tunnetilan muutoksia ajassa kahdella ulottuvuudella "
+      + "viidenlaisesta aineistosta. Lue tämä sivu kerran ennen aloitusta; "
+      + "voit avata sen uudelleen milloin tahansa.",
+  },
+  "book.dims": { en: "The two dimensions", zh: "两个维度",
+                 fi: "Kaksi ulottuvuutta" },
+  "book.how": { en: "How to rate", zh: "怎么操作", fi: "Näin merkitset" },
+  "book.modalities": { en: "The five kinds of material", zh: "五种材料",
+                       fi: "Viisi aineistotyyppiä" },
+  "book.modalitiesNote": {
+    en: "The same clip is rated five times, each time from one kind of "
+      + "material only. Ratings that differ between them are expected — "
+      + "that difference is exactly what this study measures. Never fill in "
+      + "from what another round showed you.",
+    zh: "同一段素材会被标五遍，每遍只依据其中一种材料。几遍之间标得不一样是"
+      + "正常的——那个差异正是这项研究要测量的。**不要拿别的轮次看到的东西"
+      + "来补全这一轮。**",
+    fi: "Sama klippi arvioidaan viidesti, joka kerta vain yhdentyyppisestä "
+      + "aineistosta. On odotettavaa että arviot eroavat toisistaan — juuri "
+      + "sitä eroa tämä tutkimus mittaa. Älä koskaan täydennä sillä, mitä "
+      + "jokin toinen kierros näytti.",
+  },
+  "book.watch.face": {
+    en: "Stretches where the target speaker cannot be identified are blacked "
+      + "out. That is normal — rate what you can see, and hold the line "
+      + "steady through the gap.",
+    zh: "认不出指定说话人的时段是黑屏，那是正常的。看得见什么标什么，"
+      + "黑屏期间把线保持住。",
+    fi: "Jaksot joissa kohdepuhujaa ei tunnisteta ovat mustia. Se on normaalia "
+      + "— arvioi sen perusteella minkä näet, ja pidä viiva vakaana aukon yli.",
+  },
+  "book.watch.body": {
+    en: "The face is masked on purpose. Read gesture, posture and body "
+      + "tension. Where the body is ambiguous, different annotators may "
+      + "reasonably disagree — rate your own reading.",
+    zh: "脸是故意遮住的。看手势、姿态和身体的紧张程度。肢体本身含糊时，"
+      + "不同标注者读出不同结果是合理的——标你自己的判断。",
+    fi: "Kasvot on peitetty tarkoituksella. Lue eleet, asento ja kehon "
+      + "jännitys. Kun keho on monitulkintainen, merkitsijät voivat "
+      + "perustellusti olla eri mieltä — merkitse oma tulkintasi.",
+  },
+  "book.watch.audio": {
+    en: "Follow the main speaker — the one who speaks longest. Other voices, "
+      + "laughter and music in the background are not what you are rating.",
+    zh: "跟住主要说话人，也就是说话时长最长的那个。背景里的其他人声、"
+      + "笑声和音乐不是你要标的对象。",
+    fi: "Seuraa pääpuhujaa — sitä joka puhuu pisimpään. Taustan muut äänet, "
+      + "naurut ja musiikki eivät ole arvioinnin kohde.",
+  },
+  "book.watch.text": {
+    en: "Rate at the pace the words light up, not after reading the whole "
+      + "sentence. A word can flip the reading of everything before it — let "
+      + "the line turn when it does.",
+    zh: "跟着文字点亮的节奏标，不要读完整句再一次拉到位。一个词可能推翻"
+      + "前面所有的判断——它出现时，线就跟着转。",
+    fi: "Merkitse siinä tahdissa kuin sanat syttyvät, älä koko lauseen "
+      + "luettuasi. Yksi sana voi kääntää kaiken aiemman — anna viivan "
+      + "kääntyä silloin.",
+  },
+  "book.watch.audiovisual": {
+    en: "Here picture, voice and words are all available. The full clip can "
+      + "show what no single channel does — a line that reads as harsh may "
+      + "turn out to be a joke between friends.",
+    zh: "这一轮画面、声音、文字都可以用。完整片段能看到任何单一通道看不到的"
+      + "东西——听起来刻薄的一句，可能是朋友间的玩笑。",
+    fi: "Tässä kuva, ääni ja sanat ovat kaikki käytettävissä. Koko klippi voi "
+      + "näyttää sen mitä yksikään yksittäinen kanava ei — töykeältä "
+      + "kuulostava repliikki voi osoittautua ystävien väliseksi vitsiksi.",
+  },
+  "book.training": { en: "How the training works", zh: "训练怎么进行",
+                     fi: "Näin harjoittelu etenee" },
+  "book.training1": {
+    en: "Each clip is rated twice: first valence, then arousal.",
+    zh: "每个片段标两遍：先效价，再唤醒。",
+    fi: "Jokainen klippi arvioidaan kahdesti: ensin valenssi, sitten vireystila.",
+  },
+  "book.training2": {
+    en: "Once both are submitted, your curve is shown against a reference "
+      + "curve, with a short note on how the reference was read.",
+    zh: "两个维度都提交之后，会把你的曲线和参考曲线画在一起，"
+      + "并附一段参考曲线的判断依据。",
+    fi: "Kun molemmat on lähetetty, käyräsi näytetään viitekäyrän rinnalla, "
+      + "mukana lyhyt selostus siitä miten viite luettiin.",
+  },
+  "book.training3": {
+    en: "Differences are not mistakes. What matters is that you follow the "
+      + "changes at all, and use the range rather than parking the line.",
+    zh: "标得不一样不等于标错了。要紧的是你确实跟着变化走，"
+      + "并且用上整个量程，而不是把线摆在一处不动。",
+    fi: "Erot eivät ole virheitä. Tärkeää on että todella seuraat muutoksia ja "
+      + "käytät koko asteikkoa etkä jätä viivaa paikalleen.",
+  },
+  "book.start": { en: "Start", zh: "开始标注", fi: "Aloita" },
+  "book.reopen": { en: "Guide", zh: "指南", fi: "Ohje" },
+  "book.close": { en: "Back to annotation", zh: "返回标注",
+                  fi: "Takaisin merkintään" },
+
   "guide.dims": { en: "Dimensions", zh: "标注维度", fi: "Ulottuvuudet" },
   "guide.valence": {
     en: "−1 negative (sad, angry) · 0 neutral · +1 positive (happy, cheerful)",
