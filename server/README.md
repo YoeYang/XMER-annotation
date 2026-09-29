@@ -41,32 +41,37 @@ XMER_ADMIN_TOKEN=<管理端 token>
 - 采样块按 `chunk_index` 拼接还原轨迹，允许乱序到达
 - 提交走版本链（`previous_submission_id`），Update 不覆盖历史
 - `(annotator_id, task_id, revision)` 唯一，挡住重复提交
-- `(annotator_id, task_id, phase)` 唯一：同阶段不重复分配，但同一样本可在不同阶段再次出现（P3 锚点复标）
+- `(annotator_id, task_id, phase)` 唯一：同阶段不重复分配；同一账号可同时挂 training 与 main 两批
 
-## 管理工具 `manage.py`
+## 管理工具 `manage.py`（2026-09-29 版）
 
 ```bash
 export XMER_DATABASE_URL=postgresql+psycopg://user:pass@host/xmer_annotation
 
-# 1. 批量建账号，导出专属链接（明文 token 只出现这一次）
-python manage.py create-annotators --count 20 --phase main --prefix P3 \
-    --base-url https://<域名>/annotation --out annotators_P3.csv
+# 1. 建正式账号：编号 P<阶段>-<ZH|EN>-<序号>，phase=main，号只发不收
+python manage.py create-annotators --stage 1 --language zh --count 2 \
+    --base-url https://<域名>/annotation --out p1_zh.csv
+python manage.py create-annotators --stage 1 --language en --count 6 \
+    --base-url https://<域名>/annotation --out p1_en.csv
 
-# 2. 生成分配计划 CSV（不写库，可用表格软件手改）
-python manage.py plan --pool <04>/annotation_pool_3500.jsonl \
-    --anchors <04>/anchor_set_500.jsonl --anchor-count 300 \
-    --phase main --coverage 2 --out plans/assignment_plan_P3.csv
+# 2. 按语言挂训练分配（照抄 TRZH-01 / TREN-01）；训练交齐后自动解锁正式任务
+python manage.py assign-training --stage 1
 
-# 3. 把（可能已手改的）计划写入数据库
-python manage.py apply-plan --plan plans/assignment_plan_P3.csv --phase main
+# 3. 生成分配计划 CSV（不写库）。按编号前缀 P1- 取人
+python manage.py plan --pool plans/pool_3420.jsonl --stage 1 --coverage 2 \
+    --seed 20260929 --out plans/assignment_plan_P1.csv
 
-# 4. 查看现状
+# 4. 写入数据库（任何一人已开工就整份拒绝，开工后只能释放与转移）
+python manage.py apply-plan --plan plans/assignment_plan_P1.csv --phase main
+
+# 5. 查看现状
 python manage.py status
 ```
 
-**为什么计划先出 CSV 再回填**：分配是研究设计决策，需要人工复核和手动调整；CSV 可用表格软件直接改，改完 `apply-plan` 覆盖写入。同一 `--seed` 可完整重现一份计划，便于回溯。
+**为什么计划先出 CSV 再回填**：分配是研究设计决策，需要人工复核；同一 `--seed` 可完整重现一份计划，便于回溯。
 
-**`--coverage` 决定锚点还有没有意义**：锚点的价值在于同一样本被多人标注才能算一致性。`coverage=1` 等于没有重叠，锚点白设。默认 2。
+**分配规则**：唯一重复约束是同一人不拿两次相同的 (样本, 模态)；chsims 的 text/full 只给中文标注者；
+中文标注者另拿非 chsims 的 text/full 各 `--zh-open-quota` 条（默认 300）。细节见 `app/allocation.py` 模块说明。
 
 **账号 CSV 含明文 token**，已在 `.gitignore` 中排除；服务器只存哈希，文件丢了只能重新生成账号。
 

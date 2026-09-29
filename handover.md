@@ -100,13 +100,40 @@ Roihu 本地副本即本目录。
 
 | 批次 | 内容 | 状态 |
 | --- | --- | --- |
-| T0 | handover 拆分归档、memory 清理、删过期计划文件 | ✅ |
-| T1 | 语言约束 + 按前缀取人 + 测试 + 本地试排 8 人 | ⏳ |
-| T1b | 训练与正式合并到同一账号，训练完自动解锁 | ⏳ |
-| T2 | 迁移：分配状态列、分配事件日志表、标注者 profile 表 | ⏳ |
-| T3 | 生产：建 8 个号 → 出计划给 Yoe 确认 → apply → 发 4 个链接 | ⏳ |
+| T0 | handover 拆分归档、memory 清理、删过期计划文件 | ✅ `34ecc13` |
+| T1 | 语言约束 + 中文英文定额 300 + 按前缀取人 | ✅ `75b55ac` `a9c6ccd` |
+| T1b | 训练与正式合并到同一账号，训练完自动解锁 | ✅ `d819044` |
+| T2 | 迁移 `a8d0bb024335`：分配状态列、事件日志表、标注者档案表 | ✅ `394c0b6`，已上线 |
+| T3 | 生产：建 8 个号 → 挂训练 → 出计划 → **Yoe 确认** → apply → 发 4 个链接 | 🔶 计划已出，等确认 |
 | T4 | 后台：档案页、分配明细页、覆盖度报表 | 开标后 |
 | T5 | 中途退出：`release` / `transfer` 工具 | 开标后、有人退出之前 |
+
+### 阶段一计划（2026-09-29 生成，未写库）
+
+`server/plans/assignment_plan_P1.csv`，seed 20260929，sha256 `5f591e9d…8b8a02d`
+（线上与本地试排逐字节一致）。每人 4,275 条：
+
+| | face | body | audio | text·chsims | text·其余 | full·chsims | full·其余 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| P1-ZH-01/02 | ~616 | ~616 | ~615 | 914 | 300 | 914 | 300 |
+| P1-EN-01…06 | ~935 | ~935 | ~935 | 0 | ~735 | 0 | ~735 |
+
+**中文英文定额 300**（Yoe 2026-09-29 定）：不设定额时中文标注者一条英文 text/full 都拿不到，
+量不了中英两组在同类材料上的差异。
+
+### 线上账号现状
+
+8 个号已建（`P1-ZH-01`～`02`、`P1-EN-01`～`06`），都已挂训练（中文 12 / 英文 11 条）。
+**链接只存在两处**：ECS `/opt/xmer-label/secrets/P1_accounts_20260929.csv` 与
+Roihu `~/xmer-secrets/P1_accounts_20260929.csv`（均 chmod 600，不进 git）。
+
+上线前备份：`xmer_annotation-20260929-225048.sql.gz`（sha256 `2748b5bf…1ae4a4`），
+ECS `backups/` 与 Roihu `XMER/db-backups/` 各一份。
+
+### 环境
+
+- 后端测试：`module load python-data/3.12-20.04`（**不能接管道**）后 `python3 -m pytest`；系统 python 是 3.9，跑不了
+- 前端测试与构建：`singularity exec -B "$PWD:/src" --pwd /src /scratch/project_2017416/yyy2026/tmp/node20.sif …`
 
 **T2/T5 的设计（已批准）**：分配记录只追加、不删改。`assignments` 加 `status`
 （active / released）、`released_at`、`replaces_assignment_id`；新表 `assignment_events`
@@ -123,5 +150,5 @@ Roihu 本地副本即本目录。
 - `08-material-prep/out/media` 旧素材 5.6G 可删
 - 本地 `server/plans/display_ids.csv` 里还有 939 条备份池的编号（S3500 起），
   线上库只有 3420 个编号；这份 CSV 已不代表线上现状
-- `server/README.md` 的分配命令示例是旧口径，T1 完成后一并更新
+- 管理后台 `/admin/progress` 还不认识 `status=released`：有人被释放后他的进度分母会偏大，T5 时一并改
 - Playwright e2e 仍需在有浏览器的环境重写并跑通
