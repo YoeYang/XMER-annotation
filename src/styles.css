@@ -1155,6 +1155,16 @@ kbd {
   line-height: 1.5;
   color: var(--ink);
 }
+/* 训练做完时的「开始正式标注」，与指南页的开始按钮同一样式 */
+.all-done-card .primary {
+  margin-bottom: 0.3rem;
+  background: var(--teal);
+  color: #fff;
+  border: 1px solid var(--teal);
+  border-radius: 8px;
+  padding: 0.55rem 1.6rem;
+  font-size: 0.95rem;
+}
 
 /* 五模态指南页。盖住工作区、自己滚动——它比弹窗长得多，
    让整页跟着滚会把顶栏和侧栏一起带走。 */

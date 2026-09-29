@@ -371,6 +371,23 @@ const S = {
     zh: "返回任务目录",
     fi: "Takaisin luetteloon",
   },
+  "done.trainingTitle": {
+    en: "Training complete — well done!",
+    zh: "训练完成，辛苦了！",
+    fi: "Harjoittelu valmis — hienoa!",
+  },
+  "done.trainingBody": {
+    en: "Your annotation tasks are now unlocked. They come in blocks by material: "
+      + "all faces first, then bodies, audio, text and full videos.",
+    zh: "正式标注任务已经解锁。任务按材料分块：先是全部面部，再依次是身体、音频、文本和完整视频。",
+    fi: "Varsinaiset merkintätehtävät ovat nyt auki. Ne tulevat lohkoina materiaalin mukaan: "
+      + "ensin kaikki kasvot, sitten vartalo, ääni, teksti ja kokonaiset videot.",
+  },
+  "done.startMain": {
+    en: "Start annotating",
+    zh: "开始正式标注",
+    fi: "Aloita merkitseminen",
+  },
 
   // ---------------------------------------------------------- 媒体
   "media.noAudio": { en: "No audio in this modality", zh: "本模态无声音",

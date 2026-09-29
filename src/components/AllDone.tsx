@@ -5,6 +5,11 @@ import { useLang } from "../LangContext";
 interface Props {
   completed: number;
   onBack: () => void;
+  /**
+   * 训练做完了：训练与正式是同一个账号，服务端在下一次读取任务清单时解锁
+   * 正式任务。这时收尾页不是「可以关页面了」，而是「进入正式标注」。
+   */
+  onStartMain?: () => void;
 }
 
 /** 一粒纸屑。位置用像素，角度用弧度，`spin` 是每帧转过的角度。 */
@@ -36,7 +41,7 @@ function reducedMotion() {
  * 标注者没有任何「到头了」的信号。试标时就这样丢过一条——最后一遍标完没提交
  * 就离开了，数据留在库里却算不上完成。收尾页把「结束」变成看得见的事。
  */
-export default function AllDone({ completed, onBack }: Props) {
+export default function AllDone({ completed, onBack, onStartMain }: Props) {
   const { t } = useLang();
   const canvas = useRef<HTMLCanvasElement | null>(null);
 
@@ -104,10 +109,17 @@ export default function AllDone({ completed, onBack }: Props) {
       <canvas ref={canvas} className="all-done-confetti" aria-hidden="true" />
       <div className="all-done-card">
         <PartyPopper size={40} strokeWidth={1.4} />
-        <h2>{t("done.title")}</h2>
+        <h2>{t(onStartMain ? "done.trainingTitle" : "done.title")}</h2>
         <p className="all-done-count">{completed}</p>
         <p className="all-done-unit">{t("done.count")}</p>
-        <p className="all-done-body">{t("done.body")}</p>
+        <p className="all-done-body">
+          {t(onStartMain ? "done.trainingBody" : "done.body")}
+        </p>
+        {onStartMain && (
+          <button className="primary" onClick={onStartMain}>
+            {t("done.startMain")}
+          </button>
+        )}
         <button className="ghost" onClick={onBack}>
           {t("done.back")}
         </button>

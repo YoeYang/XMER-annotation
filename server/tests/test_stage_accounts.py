@@ -108,3 +108,53 @@ def test_set_language_cannot_contradict_the_id(session):
 def test_zh_only_is_chsims_text_and_full():
     got = manage.zh_only_subtasks(["chsims_a_1", "meld_dia1_utt0"])
     assert got == {("chsims_a_1", "text"), ("chsims_a_1", "audiovisual")}
+
+
+# ----------------------------------------------------- 训练分配
+
+
+def seed_templates(session):
+    from app.models import Assignment, Task
+
+    for task_id in ("T-zh-1", "T-zh-2", "T-en-1"):
+        session.add(Task(task_id=task_id, media_id=task_id, source_id=task_id,
+                         title=task_id, modality="face", src="/x", duration=1.0))
+    add(session, "TRZH-01", "zh", phase="training")
+    add(session, "TREN-01", "en", phase="training")
+    session.flush()
+    for annotator_id, task_id, order in [("TRZH-01", "T-zh-2", 0), ("TRZH-01", "T-zh-1", 1),
+                                         ("TREN-01", "T-en-1", 0)]:
+        session.add(Assignment(annotator_id=annotator_id, task_id=task_id,
+                               phase="training", order_index=order))
+    session.commit()
+
+
+def training_queue(session, annotator_id):
+    from app.models import Assignment
+
+    rows = session.query(Assignment).filter_by(annotator_id=annotator_id, phase="training")
+    return [r.task_id for r in rows.order_by(Assignment.order_index)]
+
+
+def run_assign_training(session, stage=1):
+    args = SimpleNamespace(stage=stage, template_zh="TRZH-01", template_en="TREN-01")
+    with patch("manage.session_factory", return_value=lambda: session):
+        manage.cmd_assign_training(args)
+
+
+def test_training_is_copied_by_language_in_template_order(session):
+    seed_templates(session)
+    add(session, "P1-ZH-01", "zh")
+    add(session, "P1-EN-01", "en")
+    run_assign_training(session)
+    assert training_queue(session, "P1-ZH-01") == ["T-zh-2", "T-zh-1"]
+    assert training_queue(session, "P1-EN-01") == ["T-en-1"]
+
+
+def test_training_already_assigned_is_left_alone(session):
+    """训练可能已经开始，重挂会打乱他的队列：跑第二遍不能重复插入。"""
+    seed_templates(session)
+    add(session, "P1-ZH-01", "zh")
+    run_assign_training(session)
+    run_assign_training(session)
+    assert training_queue(session, "P1-ZH-01") == ["T-zh-2", "T-zh-1"]

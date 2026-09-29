@@ -397,8 +397,15 @@ export default function App() {
         <Debrief modality={reviewing} onClose={() => setReviewing(null)} />
       )}
 
-      {celebrating && (
-        <AllDone completed={doneCount} onBack={() => setCelebrating(false)} />
+      {/* 最后一段训练的复盘和收尾页会同时触发：先让人看完复盘再盖收尾页，
+          否则点「开始正式标注」一刷新，那一段的对照就再也看不到了 */}
+      {celebrating && !reviewing && (
+        <AllDone
+          completed={doneCount}
+          onBack={() => setCelebrating(false)}
+          // 训练与正式同一个账号：重新加载时服务端判定训练已交齐，下发正式队列
+          onStartMain={training ? () => location.reload() : undefined}
+        />
       )}
 
       {pendingTask && (

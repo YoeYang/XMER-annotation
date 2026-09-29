@@ -7,6 +7,7 @@
   set-durations      素材重新处理后，按实测值校正任务时长
   plan               生成分配计划 CSV，可在表格软件里手改后再回填
   apply-plan         把（可能已手改的）计划 CSV 写入数据库
+  assign-training    按语言给正式账号挂训练分配（训练与正式同一个账号）
   set-language       给账号打语言标签（zh 表示中英都能读）
   import-reference   把某个账号的标注导入参考曲线表，供训练页对照
   status             查看账号与分配现状
@@ -319,6 +320,54 @@ def cmd_plan(args):
         cells = "".join(f"{mix.get((m, ex), 0):>15d}" for _, m, ex in columns)
         print(f"    {annotator_id:12s}{total:>7d}{cells}")
     print("可直接用表格软件修改后，再跑 apply-plan 回填。")
+
+
+def cmd_assign_training(args):
+    """给某阶段的正式账号挂上训练分配（2026-09-29 版：训练与正式同一个账号）。
+
+    训练素材按语言分两版，已经在公用预览号上排好序、挂好参考曲线：中文标注者
+    照抄 `--template-zh`（默认 TRZH-01），英文标注者照抄 `--template-en`（默认 TREN-01）。
+    已经有训练分配的账号跳过——训练可能已经开始，重挂会打乱他的队列。
+    """
+    templates = {"zh": args.template_zh, "en": args.template_en}
+    factory = session_factory()
+    with factory() as session:
+        languages = stage_annotators(session, args.stage)
+        if not languages:
+            sys.exit(f"阶段 {args.stage} 下没有在册账号")
+        queues = {}
+        for language, template in templates.items():
+            queues[language] = list(
+                session.scalars(
+                    select(Assignment)
+                    .where(Assignment.annotator_id == template,
+                           Assignment.phase == "training")
+                    .order_by(Assignment.order_index)
+                )
+            )
+            if not queues[language] and language in languages.values():
+                sys.exit(f"模板账号 {template} 没有训练分配")
+
+        done, skipped = [], []
+        for annotator_id, language in languages.items():
+            has = session.scalar(
+                select(func.count()).select_from(Assignment).where(
+                    Assignment.annotator_id == annotator_id,
+                    Assignment.phase == "training",
+                )
+            )
+            if has:
+                skipped.append(annotator_id)
+                continue
+            for row in queues[language]:
+                session.add(Assignment(annotator_id=annotator_id, task_id=row.task_id,
+                                       phase="training", order_index=row.order_index))
+            done.append(f"{annotator_id}（{templates[language]}，{len(queues[language])} 条）")
+        session.commit()
+    for line in done:
+        print(f"已挂训练  {line}")
+    if skipped:
+        print(f"已有训练分配、跳过：{'、'.join(skipped)}")
 
 
 def cmd_apply_plan(args):
@@ -695,6 +744,12 @@ def main():
     apply_plan.add_argument("--phase", choices=PHASES, required=True)
     apply_plan.add_argument("--allow-missing", action="store_true")
     apply_plan.set_defaults(func=cmd_apply_plan)
+
+    training = sub.add_parser("assign-training", help="按语言给正式账号挂训练分配")
+    training.add_argument("--stage", type=int, required=True)
+    training.add_argument("--template-zh", default="TRZH-01")
+    training.add_argument("--template-en", default="TREN-01")
+    training.set_defaults(func=cmd_assign_training)
 
     seed = sub.add_parser("seed-e2e", help="为端到端测试准备独立账号")
     seed.add_argument("--annotator-id", default="E2E-TEST")
