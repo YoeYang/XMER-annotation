@@ -1,4 +1,5 @@
 import os
+import re
 from dataclasses import dataclass
 
 PHASES = ("pilot", "training", "main")
@@ -17,6 +18,30 @@ LANGUAGES = ("en", "zh")
 chsims 的 `text` 与 `audiovisual` 只能分给 `zh`：那两个模态要读懂中文，
 其余模态与语言无关（面部与肢体本就无关，音频按设计只听韵律）。
 """
+
+ZH_ONLY_DATASETS = ("chsims",)
+ZH_ONLY_MODALITIES = ("text", "audiovisual")
+"""这两者的交集只能分给 `zh` 标注者。数据集由样本名前缀判定（`chsims_…`）。"""
+
+
+def dataset_of(sample_id: str) -> str:
+    return sample_id.split("_", 1)[0]
+
+
+STAGE_ACCOUNT = re.compile(r"^P(?P<stage>\d+)-(?P<lang>ZH|EN)-(?P<number>\d{2,})$")
+"""正式标注者编号 `P<阶段>-<语言>-<序号>`，如 `P1-ZH-01`（2026-09-29 定）。
+
+编号里的语言与 `annotators.language` 必须一致；号只发不收，补招的人往后编。
+库里这些账号的 `phase` 一律是 `main`，阶段靠编号区分。
+"""
+
+
+def stage_account_id(stage: int, language: str, number: int) -> str:
+    return f"P{stage}-{language.upper()}-{number:02d}"
+
+
+def stage_account_prefix(stage: int, language: str) -> str:
+    return f"P{stage}-{language.upper()}-"
 
 DIMENSIONS = ("valence", "arousal")
 """V3 一次只标一个维度。一个子任务要效价轮与唤醒轮都提交才算完成。"""

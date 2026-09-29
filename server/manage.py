@@ -24,7 +24,6 @@ from pathlib import Path
 from sqlalchemy import delete, func, select
 
 from app.allocation import (
-    ISOLATION_MODES,
     AllocationShortfall,
     audit,
     build_plan,
@@ -38,7 +37,18 @@ from app.assignments import (
 )
 from app.auth import hash_token, new_token
 from app.completion import latest_submissions
-from app.config import DIMENSIONS, LANGUAGES, MODALITIES, PHASES, load_settings
+from app.config import (
+    DIMENSIONS,
+    LANGUAGES,
+    MODALITIES,
+    PHASES,
+    STAGE_ACCOUNT,
+    ZH_ONLY_DATASETS,
+    ZH_ONLY_MODALITIES,
+    dataset_of,
+    load_settings,
+    stage_account_prefix,
+)
 from app.export import assemble_samples
 from app.db import create_all, create_db_engine, create_session_factory
 from app.models import (
@@ -76,16 +86,35 @@ def session_factory():
 # ------------------------------------------------------------------ 账号
 
 
+def _next_account_number(existing: set[str], prefix: str) -> int:
+    """前缀下的下一个序号。号只发不收：接着已有的最大号往后编，不填空洞。"""
+    taken = [
+        int(annotator_id[len(prefix):])
+        for annotator_id in existing
+        if annotator_id.startswith(prefix) and annotator_id[len(prefix):].isdigit()
+    ]
+    return max(taken, default=0) + 1
+
+
 def cmd_create_annotators(args):
+    """正式标注者用 `--stage`，编号 P<阶段>-<语言>-<序号>，phase 固定为 main；
+    其余账号（预览、测试）用 `--prefix` + `--phase`。"""
+    if args.stage is not None:
+        prefix, phase = stage_account_prefix(args.stage, args.language), "main"
+    else:
+        if not args.prefix or not args.phase:
+            sys.exit("不用 --stage 时必须同时给 --prefix 与 --phase")
+        if STAGE_ACCOUNT.match(f"{args.prefix}-01"):
+            sys.exit(f"{args.prefix} 是正式标注者编号格式，请改用 --stage")
+        prefix, phase = f"{args.prefix}-", args.phase
+
     factory = session_factory()
     rows = []
     with factory() as session:
         existing = set(session.scalars(select(Annotator.annotator_id)))
-        for number in range(1, args.count + 1):
-            annotator_id = f"{args.prefix}-{number:02d}"
-            if annotator_id in existing:
-                print(f"跳过已存在的 {annotator_id}", file=sys.stderr)
-                continue
+        start = _next_account_number(existing, prefix)
+        for number in range(start, start + args.count):
+            annotator_id = f"{prefix}{number:02d}"
             token = new_token()
             session.add(
                 Annotator(
@@ -93,14 +122,14 @@ def cmd_create_annotators(args):
                     token_hash=hash_token(token),
                     display_name=args.display_name_prefix
                     and f"{args.display_name_prefix}{number:02d}",
-                    phase=args.phase,
+                    phase=phase,
                     language=args.language,
                 )
             )
             rows.append(
                 {
                     "annotator_id": annotator_id,
-                    "phase": args.phase,
+                    "phase": phase,
                     "language": args.language,
                     "token": token,
                     "url": f"{args.base_url.rstrip('/')}/?t={token}",
@@ -185,32 +214,56 @@ def cmd_import_tasks(args):
 # ------------------------------------------------------------------ 分配
 
 
+def stage_annotators(session, stage: int) -> dict[str, str]:
+    """某阶段在册的正式标注者 {annotator_id: language}，按编号排序。
+
+    编号里的语言与库里的 `language` 对不上时直接退出：语言决定能不能拿中文素材，
+    两处说法不一致，分配就不知道该信哪个。
+    """
+    prefix = f"P{stage}-"
+    found = session.execute(
+        select(Annotator.annotator_id, Annotator.language)
+        .where(
+            Annotator.phase == "main",
+            Annotator.active.is_(True),
+            Annotator.annotator_id.startswith(prefix),
+        )
+        .order_by(Annotator.annotator_id)
+    ).all()
+    out, bad = {}, []
+    for annotator_id, language in found:
+        match = STAGE_ACCOUNT.match(annotator_id)
+        if not match or match["lang"].lower() != language:
+            bad.append(f"{annotator_id}（库里 language={language}）")
+        out[annotator_id] = language
+    if bad:
+        sys.exit("编号与语言标签不一致，先用 set-language 修正：" + "、".join(bad))
+    return out
+
+
+def zh_only_subtasks(pool: list[str]) -> set[tuple[str, str]]:
+    return {
+        (sample_id, modality)
+        for sample_id in pool
+        if dataset_of(sample_id) in ZH_ONLY_DATASETS
+        for modality in ZH_ONLY_MODALITIES
+    }
+
+
 def cmd_plan(args):
     pool = read_sample_ids(Path(args.pool))
-    # 锚点在 2026-09-21 的口径里已经取消，`--anchors` 只为回放老计划保留。
-    # 不给就是空集，全部样本一视同仁按 coverage 重复。
-    anchors = read_sample_ids(Path(args.anchors))[: args.anchor_count] if args.anchors else []
-    missing = set(anchors) - set(pool)
-    if missing:
-        sys.exit(f"有 {len(missing)} 个锚点不在池子里，两份文件对不上号")
+    zh_only = zh_only_subtasks(pool)
 
     factory = session_factory()
     with factory() as session:
-        annotators = list(
-            session.scalars(
-                select(Annotator.annotator_id)
-                .where(Annotator.phase == args.phase, Annotator.active.is_(True))
-                .order_by(Annotator.annotator_id)
-            )
-        )
-    if not annotators:
-        sys.exit(f"阶段 {args.phase} 下没有账号，请先跑 create-annotators")
+        languages = stage_annotators(session, args.stage)
+    if not languages:
+        sys.exit(f"阶段 {args.stage} 下没有在册账号，请先跑 create-annotators --stage {args.stage}")
 
     try:
         rows = build_plan(
-            pool, anchors, annotators, list(MODALITIES),
-            coverage=args.coverage, seed=args.seed,
-            per_annotator=args.per_annotator, isolation=args.isolation,
+            pool, [], languages, list(MODALITIES), zh_only,
+            coverage=args.coverage, seed=args.seed, per_annotator=args.per_annotator,
         )
     except AllocationShortfall as exc:
         sys.exit(f"排不出满足约束的计划：{exc}")
@@ -230,24 +283,28 @@ def cmd_plan(args):
                 }
             )
 
-    report = audit(rows, list(MODALITIES))
-    rule = {
-        "subtask": "同一人不重复同一 (样本, 模态)；跨模态可重复",
-        "strict": "同一人不重复见同一样本（已废弃的老口径）",
-        "off": "不设限（连重复子任务都不拦）",
-    }[args.isolation]
+    report = audit(rows, list(MODALITIES), languages, zh_only)
+    zh = [a for a, lang in languages.items() if lang == "zh"]
     print(f"计划已写入 {out}")
-    print(f"  标注者      {len(annotators)} 人")
+    print(f"  标注者      {len(languages)} 人（中文 {len(zh)}、英文 {len(languages) - len(zh)}）")
     print(f"  池子        {len(pool)} 个样本 × {len(MODALITIES)} 模态")
     print(f"  覆盖度      每个 (样本, 模态) 由 {args.coverage} 人各标一遍")
     print(f"  子任务      {len(rows)} 条，每人 {report['load_min']}~{report['load_max']} 条")
-    print(f"  分配规则    {args.isolation}（{rule}）")
+    print(f"  只给中文    {len(zh_only)} 个子任务"
+          f"（{'/'.join(ZH_ONLY_DATASETS)} 的 {'、'.join(ZH_ONLY_MODALITIES)}）")
     if report["duplicate_subtasks"]:
         print(f"  ⚠ 拿到重复子任务的标注者：{report['duplicate_subtasks'][:5]}")
     else:
         print("  ✓ 无人拿到重复子任务")
+    if report["language_violations"]:
+        print(f"  ⚠ 语言违规 {report['language_violations']} 条（中文子任务落到了英文标注者）")
+    else:
+        print("  ✓ 中文子任务全部落在中文标注者")
     print(f"  跨模态重复  {report['repeat_samples']} 人次"
           f"（同一人看到同一视频的多个模态；按定稿口径允许）")
+    print("  每人条数（其中只给中文的）：")
+    for annotator_id, total in report["per_annotator"].items():
+        print(f"    {annotator_id:12s} {total:>6}  ({report['zh_only_load'][annotator_id]})")
     print("  每人各模态条数区间：")
     for modality, (lo, hi) in report["modality_min_max"].items():
         print(f"    {modality:12s} {lo}~{hi}")
@@ -471,6 +528,12 @@ def cmd_set_language(args):
         row = session.get(Annotator, args.annotator_id)
         if row is None:
             sys.exit(f"没有账号 {args.annotator_id}")
+        match = STAGE_ACCOUNT.match(args.annotator_id)
+        if match and match["lang"].lower() != args.language:
+            sys.exit(
+                f"{args.annotator_id} 的编号写明了语言 {match['lang']}，不能改成 {args.language}。"
+                "语言分错了就另建一个对应语言的号。"
+            )
         was, row.language = row.language, args.language
         session.commit()
     print(f"{args.annotator_id}: {was} → {args.language}")
@@ -574,12 +637,17 @@ def main():
 
     create = sub.add_parser("create-annotators", help="批量生成标注账号")
     create.add_argument("--count", type=int, required=True)
-    create.add_argument("--phase", choices=PHASES, required=True)
     create.add_argument(
-        "--language", choices=LANGUAGES, default="en",
+        "--stage", type=int,
+        help="正式标注者：阶段号。生成 P<阶段>-<ZH|EN>-<序号>，phase 固定为 main，"
+             "序号接着已有的最大号往后编",
+    )
+    create.add_argument(
+        "--language", choices=LANGUAGES, required=True,
         help="zh 表示中英都能读，可以拿 chsims 的 text 与 full；en 只读英文。",
     )
-    create.add_argument("--prefix", default="A", help="账号前缀，如 P3 生成 P3-01")
+    create.add_argument("--phase", choices=PHASES, help="非正式账号用，配合 --prefix")
+    create.add_argument("--prefix", help="非正式账号前缀，如 DEMO 生成 DEMO-01")
     create.add_argument("--display-name-prefix", default="")
     create.add_argument("--base-url", default="https://example.invalid/annotation")
     create.add_argument("--out", default="annotators.csv")
@@ -590,10 +658,11 @@ def main():
     imp.set_defaults(func=cmd_import_tasks)
 
     plan = sub.add_parser("plan", help="生成分配计划 CSV")
-    plan.add_argument("--pool", required=True)
-    plan.add_argument("--anchors", default="", help="已废弃；不给就是没有锚点")
-    plan.add_argument("--anchor-count", type=int, default=300)
-    plan.add_argument("--phase", choices=PHASES, required=True)
+    plan.add_argument("--pool", required=True, help="如 plans/pool_3420.jsonl")
+    plan.add_argument(
+        "--stage", type=int, required=True,
+        help="阶段号：取编号 P<阶段>- 开头、phase=main 的在册账号",
+    )
     plan.add_argument(
         "--coverage", type=int, default=2,
         help="每个 (样本, 模态) 由几人各标一遍。阶段一 2、阶段二 3。",
@@ -602,12 +671,6 @@ def main():
     plan.add_argument(
         "--per-annotator", type=int, default=0,
         help="每人最多多少个子任务，0 表示不限。排不下会报错而不是悄悄截断。",
-    )
-    plan.add_argument(
-        "--isolation", choices=ISOLATION_MODES, default="subtask",
-        help="subtask（默认，定稿口径）：同一人不重复同一 (样本, 模态)，"
-             "跨模态可重复；strict：同一人不重复见同一样本（已废弃）；"
-             "off：不设限，连重复子任务都不拦。",
     )
     plan.add_argument("--out", default="assignment_plan.csv")
     plan.set_defaults(func=cmd_plan)
