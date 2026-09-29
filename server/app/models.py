@@ -17,6 +17,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .config import DIMENSIONS, LANGUAGES, MODALITIES, PHASES
 from .db import Base
 
+ASSIGNMENT_STATUSES = ("active", "released")
+EVENT_KINDS = ("release", "transfer")
+
 # 生产库用 JSONB（更紧凑、解析更快）；测试跑 SQLite 时退回通用 JSON
 JsonCol = JSON().with_variant(JSONB, "postgresql")
 
@@ -158,12 +161,90 @@ class Assignment(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
+    # ---- 中途退出（2026-09-29 版）：分配记录只追加、不删改 ----
+    # 有人退出时，他没做完的子任务标 released（行留着，谁曾经拿过什么永远查得到）；
+    # 补人时给接手者新建一行，`replaces_assignment_id` 指回被释放的那一行。
+    # 任意一个 (样本, 模态) 由谁标、中途换过谁，顺着这条链一查到底。
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    release_event_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("assignment_events.event_id")
+    )
+    replaces_assignment_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("assignments.assignment_id")
+    )
 
     __table_args__ = (
         UniqueConstraint(
             "annotator_id", "task_id", "phase", name="uq_assignments_annotator_task"
         ),
         CheckConstraint(_one_of("phase", PHASES), name="ck_assignments_phase"),
+        CheckConstraint(
+            _one_of("status", ASSIGNMENT_STATUSES), name="ck_assignments_status"
+        ),
+    )
+
+
+class AssignmentEvent(Base):
+    """分配的每一次释放与转移，一次操作一行（2026-09-29 版）。
+
+    逐条子任务的去向记在 `assignments` 自己身上（status / release_event_id /
+    replaces_assignment_id）；这里记的是「谁、什么时候、为什么、动了多少」，
+    供事后解释数据为什么中途换人。
+    """
+
+    __tablename__ = "assignment_events"
+
+    event_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    # 被释放 / 被转出的那位
+    annotator_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("annotators.annotator_id"), nullable=False
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # 数量、接手者名单等，随操作种类不同
+    detail: Mapped[dict] = mapped_column(JsonCol, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(_one_of("kind", EVENT_KINDS), name="ck_assignment_events_kind"),
+    )
+
+
+class AnnotatorProfile(Base):
+    """标注者档案，与账号一对一（2026-09-29 版）。
+
+    **个人信息**：只有管理员接口能读，导出标注数据默认不带。常用字段各占一列，
+    方便筛选统计；临时多收的信息放 `extra`，不必为每个新字段写迁移。
+    """
+
+    __tablename__ = "annotator_profiles"
+
+    annotator_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("annotators.annotator_id"), primary_key=True
+    )
+    nationality: Mapped[str | None] = mapped_column(Text)
+    age: Mapped[int | None] = mapped_column(Integer)
+    gender: Mapped[str | None] = mapped_column(Text)
+    native_language: Mapped[str | None] = mapped_column(Text)
+    other_languages: Mapped[str | None] = mapped_column(Text)
+    education: Mapped[str | None] = mapped_column(Text)
+    contact: Mapped[str | None] = mapped_column(Text)
+    recruited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 退出时由 release 流程写入
+    left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    left_reason: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    extra: Mapped[dict] = mapped_column(JsonCol, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint("age IS NULL OR (age > 0 AND age < 120)", name="ck_profiles_age"),
     )
 
 

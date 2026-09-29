@@ -65,6 +65,7 @@ def _training_task_ids(session: Session, annotator: Annotator) -> list[str]:
         session.scalars(
             select(Assignment.task_id).where(
                 Assignment.annotator_id == annotator.annotator_id,
+                Assignment.status == "active",
                 Assignment.phase == "training",
             )
         )
@@ -114,6 +115,7 @@ def _assigned_task(session: Session, annotator: Annotator, task_id: str) -> Task
         .where(
             Task.task_id == task_id,
             Assignment.annotator_id == annotator.annotator_id,
+            Assignment.status == "active",
             Assignment.phase == current_phase(session, annotator),
         )
     )
@@ -164,6 +166,7 @@ def read_me(
         .outerjoin(SampleNumber, SampleNumber.source_id == Task.source_id)
         .where(
             Assignment.annotator_id == annotator.annotator_id,
+            Assignment.status == "active",
             Assignment.phase == phase,
         )
         .order_by(Assignment.order_index, MODALITY_RANK)
@@ -388,6 +391,7 @@ def read_debrief(
             .join(Assignment, Assignment.task_id == Task.task_id)
             .where(
                 Assignment.annotator_id == annotator.annotator_id,
+                Assignment.status == "active",
                 Assignment.phase == "training",
                 Task.modality == modality,
             )

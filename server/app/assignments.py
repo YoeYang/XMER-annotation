@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 
 from .models import (
     Annotator,
+    AnnotatorProfile,
     Assignment,
+    AssignmentEvent,
     Attempt,
     AttemptFlag,
     SampleChunk,
@@ -121,7 +123,22 @@ def replace_assignments(
 
     返回 (写入的任务数, 没有对应任务的子任务)。整体替换而非增量合并：
     分配是一份完整计划，半新半旧的队列比错误的队列更难排查。
+
+    **开工后拒绝整体替换**（2026-09-29 版）：这位标注者在这一阶段已经交过任何
+    提交，就抛 ValueError。整体替换会把他做了一半的队列连同释放 / 转移的记录
+    一起抹掉；开工后调整分配只能走释放与转移。
     """
+    started = session.scalar(
+        select(Submission.task_id)
+        .join(Assignment, (Assignment.task_id == Submission.task_id)
+              & (Assignment.annotator_id == Submission.annotator_id))
+        .where(Submission.annotator_id == annotator_id, Assignment.phase == phase)
+        .limit(1)
+    )
+    if started:
+        raise ValueError(
+            f"{annotator_id} 在 {phase} 阶段已经开工，不能整体替换分配；请用释放与转移。"
+        )
     index = tasks_by_sample_modality(session) if index is None else index
     session.execute(
         delete(Assignment).where(
@@ -181,6 +198,18 @@ def purge_annotator(session: Session, annotator_id: str) -> dict[str, int]:
     管理端与 `manage.py drop-annotator` 共用这一份——两处各写一套的话，
     迟早有一处漏删某张表，留下指向已删账号的孤儿行。
     """
+    own = select(Assignment.assignment_id).where(Assignment.annotator_id == annotator_id)
+    handed_on = session.scalar(
+        select(Assignment.annotator_id).where(
+            Assignment.replaces_assignment_id.in_(own),
+            Assignment.annotator_id != annotator_id,
+        )
+    )
+    if handed_on:
+        # 他的子任务已经转给别人：删掉这个号，接手者那一行就指向不存在的来历，
+        # 「谁中途换了谁」这条链从中间断掉。退出的人走释放，不走删除。
+        raise ValueError(f"{annotator_id} 的分配已转给 {handed_on}，不能删除；退出请用释放。")
+
     attempt_ids = list(
         session.scalars(
             select(Attempt.attempt_id).where(Attempt.annotator_id == annotator_id)
@@ -192,6 +221,8 @@ def purge_annotator(session: Session, annotator_id: str) -> dict[str, int]:
         "submissions": 0,
         "attempts": 0,
         "assignments": 0,
+        "assignment_events": 0,
+        "annotator_profiles": 0,
     }
     if attempt_ids:
         removed["attempt_flags"] = session.execute(
@@ -208,6 +239,12 @@ def purge_annotator(session: Session, annotator_id: str) -> dict[str, int]:
     ).rowcount
     removed["assignments"] = session.execute(
         delete(Assignment).where(Assignment.annotator_id == annotator_id)
+    ).rowcount
+    removed["assignment_events"] = session.execute(
+        delete(AssignmentEvent).where(AssignmentEvent.annotator_id == annotator_id)
+    ).rowcount
+    removed["annotator_profiles"] = session.execute(
+        delete(AnnotatorProfile).where(AnnotatorProfile.annotator_id == annotator_id)
     ).rowcount
     session.execute(delete(Annotator).where(Annotator.annotator_id == annotator_id))
     return removed

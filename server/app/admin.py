@@ -244,16 +244,20 @@ def set_assignments(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "没有这个标注者。")
     if phase not in PHASES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"阶段只能是 {PHASES}。")
-    written, missing = replace_assignments(
-        session,
-        annotator_id,
-        phase,
-        [
-            (item["sample_id"], item["modality"], bool(item.get("is_anchor")))
-            for item in queue
-        ],
-        tasks_by_sample_modality(session),
-    )
+    try:
+        written, missing = replace_assignments(
+            session,
+            annotator_id,
+            phase,
+            [
+                (item["sample_id"], item["modality"], bool(item.get("is_anchor")))
+                for item in queue
+            ],
+            tasks_by_sample_modality(session),
+        )
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     session.commit()
     return {"written": written, "missing_tasks": missing}
 
@@ -378,7 +382,11 @@ def delete_annotator(
         )
     if session.get(Annotator, annotator_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "找不到该标注者。")
-    removed = purge_annotator(session, annotator_id)
+    try:
+        removed = purge_annotator(session, annotator_id)
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     session.commit()
     return {"annotator_id": annotator_id, "removed": removed}
 

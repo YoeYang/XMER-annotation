@@ -396,14 +396,19 @@ def cmd_apply_plan(args):
         written = 0
         for annotator_id, rows in queues.items():
             rows.sort()
-            count, _ = replace_assignments(
-                session,
-                annotator_id,
-                args.phase,
-                [(sample_id, modality, is_anchor)
-                 for _, sample_id, modality, is_anchor in rows],
-                index,
-            )
+            try:
+                count, _ = replace_assignments(
+                    session,
+                    annotator_id,
+                    args.phase,
+                    [(sample_id, modality, is_anchor)
+                     for _, sample_id, modality, is_anchor in rows],
+                    index,
+                )
+            except ValueError as exc:
+                # 一人失败整份计划都不落库：半新半旧比全旧更难排查
+                session.rollback()
+                sys.exit(f"计划未写入：{exc}")
             written += count
         session.commit()
 
@@ -447,7 +452,10 @@ def cmd_drop_annotator(args):
     """删除标注者及其全部数据。与管理端共用 purge_annotator，删法只有一份。"""
     factory = session_factory()
     with factory() as session:
-        removed = purge_annotator(session, args.annotator_id)
+        try:
+            removed = purge_annotator(session, args.annotator_id)
+        except ValueError as exc:
+            sys.exit(str(exc))
         session.commit()
     detail = "，".join(f"{k} {v}" for k, v in removed.items() if v)
     print(f"已删除 {args.annotator_id} 及其全部数据（{detail or '无产出数据'}）")

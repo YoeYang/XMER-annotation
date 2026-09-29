@@ -149,3 +149,52 @@ def test_revisions_are_renumbered_per_dimension(at_paradigm_v3):
     assert got["s1"] == (1, None)
     assert got["s2"] == (1, None), "唤醒是自己那条链的第一版，不接在效价后面"
     assert got["s3"] == (2, "s1"), "效价的第二版要指回效价的第一版"
+
+
+# ------------------------------------- 释放与转移链、标注者档案（a8d0bb024335）
+
+
+def _migrate_to(config, revision):
+    cwd = os.getcwd()
+    os.chdir(SERVER)
+    try:
+        if revision.startswith("-"):
+            command.downgrade(config, revision)
+        else:
+            command.upgrade(config, revision)
+    finally:
+        os.chdir(cwd)
+
+
+def test_existing_assignments_become_active(tmp_path, monkeypatch):
+    """线上已有的分配在加列之后必须是 active，否则迁移一跑完所有人的队列就空了。"""
+    from sqlalchemy import text
+
+    url = f"sqlite+pysqlite:///{tmp_path/'rel.db'}"
+    monkeypatch.setenv("XMER_DATABASE_URL", url)
+    config = Config(str(SERVER / "alembic.ini"))
+    config.set_main_option("script_location", str(SERVER / "migrations"))
+    _migrate_to(config, "d5f13c8ba204")
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO annotators (annotator_id, display_name, token_hash, phase, "
+            "active, created_at, language) VALUES ('A1', 'A', 'h', 'main', 1, '2026-09-29', 'en')"
+        ))
+        conn.execute(text(
+            "INSERT INTO tasks (task_id, media_id, source_id, title, modality, src, "
+            "duration, target, demo, timeline_origin) VALUES "
+            "('T1', 'm', 'src', 't', 'face', 's', 1.0, '', 0, 0.0)"
+        ))
+        conn.execute(text(
+            "INSERT INTO assignments (annotator_id, task_id, phase, order_index, "
+            "is_anchor, created_at) VALUES ('A1', 'T1', 'main', 0, 0, '2026-09-29')"
+        ))
+    _migrate_to(config, "a8d0bb024335")
+    with engine.connect() as conn:
+        status = conn.execute(text("SELECT status FROM assignments")).scalar_one()
+    assert status == "active"
+
+    _migrate_to(config, "-1")  # 退得回去
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM assignments")).scalar_one() == 1
