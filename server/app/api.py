@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .auth import current_annotator, get_session
 from .assignments import numbers_by_sample
 from .completion import completed_tasks, latest_submissions
-from .config import DIMENSIONS, MODALITIES
+from .config import DIMENSIONS, MODALITIES, is_mirror
 from .export import assemble_samples, build_export
 from .models import (
     Annotator,
@@ -108,7 +108,12 @@ def _assigned_task(session: Session, annotator: Annotator, task_id: str) -> Task
     """访问隔离：标注者只能碰自己**当前阶段**分配到的任务。
 
     训练没交齐时碰不到正式任务，解锁后也碰不到训练任务——两批互不串。
+    管理员镜像号两批都能碰：它在训练页与正式页之间随意切换。
     """
+    phases = (
+        ("training", "main") if is_mirror(annotator.annotator_id)
+        else (current_phase(session, annotator),)
+    )
     task = session.scalar(
         select(Task)
         .join(Assignment, Assignment.task_id == Task.task_id)
@@ -116,7 +121,7 @@ def _assigned_task(session: Session, annotator: Annotator, task_id: str) -> Task
             Task.task_id == task_id,
             Assignment.annotator_id == annotator.annotator_id,
             Assignment.status == "active",
-            Assignment.phase == current_phase(session, annotator),
+            Assignment.phase.in_(phases),
         )
     )
     if task is None:
@@ -152,14 +157,21 @@ def _latest_submission(
 
 @router.get("/me", response_model=MeOut)
 def read_me(
+    view: str | None = None,
     annotator: Annotator = Depends(current_annotator),
     session: Session = Depends(get_session),
 ) -> MeOut:
+    """`view` 只对管理员镜像号有效：`training` 或 `main`，决定这次下发哪一批。
+    镜像号不走训练关卡、也不会被写 `trained_at`；普通账号忽略这个参数。"""
     # order_index 挂在 assignments 上而不是 tasks 上——同一个任务分给不同的人，
     # 队列位置本来就不同。所以要连着取出来，再拼进 TaskOut。
     # 编号走外连接：没发号的样本照常下发，只是目录里没有编号可显示，
     # 比整条任务凭空消失容易察觉得多。
-    phase = _unlock_if_trained(session, annotator)
+    mirror = is_mirror(annotator.annotator_id)
+    if mirror:
+        phase = view if view in ("training", "main") else "main"
+    else:
+        phase = _unlock_if_trained(session, annotator)
     rows = session.execute(
         select(Task, Assignment.order_index, SampleNumber.display_id)
         .join(Assignment, Assignment.task_id == Task.task_id)
@@ -191,6 +203,7 @@ def read_me(
             for task, order_index, display_id in rows
         ],
         training_modalities=[m for m in MODALITIES if m in trained],
+        mirror=mirror,
     )
 
 
@@ -417,7 +430,8 @@ def read_debrief(
 
     done = completed_tasks(session, annotator.annotator_id)
     pending = [task.task_id for task, _ in assigned if task.task_id not in done]
-    if pending:
+    # 镜像号不标注，只看界面：不等交齐，直接给参考曲线与解释（自己的曲线为空）
+    if pending and not is_mirror(annotator.annotator_id):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             f"这一段还有 {len(pending)} 条没标完，两个维度都提交后才能看对比。",

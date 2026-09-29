@@ -1155,6 +1155,38 @@ kbd {
   line-height: 1.5;
   color: var(--ink);
 }
+/* 管理员镜像号的切换条。用醒目的橙色，一眼分得清这不是标注者看到的页面 */
+.mirror-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.3rem;
+  border: 1px dashed #d8683f;
+  border-radius: 8px;
+  background: #fff7f2;
+}
+.mirror-badge {
+  padding: 0 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #d8683f;
+}
+.mirror-switch button {
+  padding: 0.25rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.mirror-switch button.active {
+  border-color: #d8683f;
+  background: #fff;
+  color: #d8683f;
+  cursor: default;
+}
+
 /* 正式阶段的训练回顾：选模态的小弹窗 */
 .review-picker {
   max-width: 28rem;

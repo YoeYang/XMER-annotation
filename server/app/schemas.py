@@ -41,6 +41,8 @@ class MeOut(BaseModel):
     # 这位标注者训练过、可以回看复盘的模态（按标注顺序）。正式阶段的「训练回顾」
     # 靠它决定显示哪几个入口；没有训练分配的账号是空表。
     training_modalities: list[str] = []
+    # 管理员镜像号：页面与标注者一比一，但可在训练页与正式页之间切换
+    mirror: bool = False
 
 
 class AttemptIn(BaseModel):

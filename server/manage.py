@@ -8,6 +8,7 @@
   plan               生成分配计划 CSV，可在表格软件里手改后再回填
   apply-plan         把（可能已手改的）计划 CSV 写入数据库
   assign-training    按语言给正式账号挂训练分配（训练与正式同一个账号）
+  mirror-queue       把标注者的队列照抄给管理员镜像号（界面检查用）
   set-language       给账号打语言标签（zh 表示中英都能读）
   import-reference   把某个账号的标注导入参考曲线表，供训练页对照
   status             查看账号与分配现状
@@ -43,11 +44,13 @@ from app.config import (
     LANGUAGES,
     MODALITIES,
     PHASES,
+    MIRROR_ACCOUNT,
     STAGE_ACCOUNT,
     ZH_ONLY_DATASETS,
     ZH_ONLY_MODALITIES,
     ZH_OPEN_QUOTA,
     dataset_of,
+    is_mirror,
     load_settings,
     stage_account_prefix,
 )
@@ -109,6 +112,10 @@ def cmd_create_annotators(args):
         if STAGE_ACCOUNT.match(f"{args.prefix}-01"):
             sys.exit(f"{args.prefix} 是正式标注者编号格式，请改用 --stage")
         prefix, phase = f"{args.prefix}-", args.phase
+        mirror = MIRROR_ACCOUNT.match(f"{prefix}01")
+        if mirror and mirror["lang"].lower() != args.language:
+            sys.exit(f"{args.prefix} 是管理员镜像号，编号写明了语言 {mirror['lang']}，"
+                     f"--language 却是 {args.language}")
 
     factory = session_factory()
     rows = []
@@ -368,6 +375,40 @@ def cmd_assign_training(args):
         print(f"已挂训练  {line}")
     if skipped:
         print(f"已有训练分配、跳过：{'、'.join(skipped)}")
+
+
+def cmd_mirror_queue(args):
+    """把某位标注者的训练与正式队列原样照抄给管理员镜像号（2026-09-29 版）。
+
+    镜像号的队列整体替换、不走 `replace_assignments` 的开工保护：它产生的数据本来
+    就不是研究数据，Yoe 在上面点过几下也不该挡住重新照抄。
+    """
+    if not is_mirror(args.to):
+        sys.exit(f"{args.to} 不是管理员镜像号（ADMIN-ZH-xx / ADMIN-EN-xx），拒绝整体替换")
+    factory = session_factory()
+    with factory() as session:
+        source = session.get(Annotator, args.source)
+        target = session.get(Annotator, args.to)
+        if source is None or target is None:
+            sys.exit("源账号或镜像号不存在")
+        if source.language != target.language:
+            sys.exit(f"语言不一致：{args.source} 是 {source.language}，{args.to} 是 {target.language}")
+        rows = list(
+            session.scalars(
+                select(Assignment)
+                .where(Assignment.annotator_id == args.source, Assignment.status == "active")
+                .order_by(Assignment.phase, Assignment.order_index)
+            )
+        )
+        session.execute(delete(Assignment).where(Assignment.annotator_id == args.to))
+        for row in rows:
+            session.add(Assignment(annotator_id=args.to, task_id=row.task_id, phase=row.phase,
+                                   order_index=row.order_index, is_anchor=row.is_anchor))
+        session.commit()
+    counts = defaultdict(int)
+    for row in rows:
+        counts[row.phase] += 1
+    print(f"{args.to} ← {args.source}：" + "、".join(f"{k} {v} 条" for k, v in sorted(counts.items())))
 
 
 def cmd_apply_plan(args):
@@ -752,6 +793,11 @@ def main():
     apply_plan.add_argument("--phase", choices=PHASES, required=True)
     apply_plan.add_argument("--allow-missing", action="store_true")
     apply_plan.set_defaults(func=cmd_apply_plan)
+
+    mirror = sub.add_parser("mirror-queue", help="把标注者的训练与正式队列照抄给管理员镜像号")
+    mirror.add_argument("--from", dest="source", required=True, help="如 P1-ZH-01")
+    mirror.add_argument("--to", required=True, help="如 ADMIN-ZH-01")
+    mirror.set_defaults(func=cmd_mirror_queue)
 
     training = sub.add_parser("assign-training", help="按语言给正式账号挂训练分配")
     training.add_argument("--stage", type=int, required=True)

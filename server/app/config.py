@@ -41,6 +41,19 @@ STAGE_ACCOUNT = re.compile(r"^P(?P<stage>\d+)-(?P<lang>ZH|EN)-(?P<number>\d{2,})
 """
 
 
+MIRROR_ACCOUNT = re.compile(r"^ADMIN-(?P<lang>ZH|EN)-(?P<number>\d{2,})$")
+"""管理员镜像号 `ADMIN-ZH-01` / `ADMIN-EN-01`（2026-09-29 版）。
+
+队列照抄某位标注者，页面与标注者一比一；但不受训练关卡约束，可以在训练页与
+正式页之间随意切换，训练复盘不等交齐就能看。给 Yoe 检查与修改界面用，
+**它产生的任何数据都不是研究数据**。编号不以 `P` 开头，不会被 `plan` 取进去。
+"""
+
+
+def is_mirror(annotator_id: str) -> bool:
+    return MIRROR_ACCOUNT.match(annotator_id) is not None
+
+
 def stage_account_id(stage: int, language: str, number: int) -> str:
     return f"P{stage}-{language.upper()}-{number:02d}"
 

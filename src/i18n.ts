@@ -280,6 +280,11 @@ const S = {
   },
   "debrief.review": { en: "Compare", zh: "看对比", fi: "Vertaa" },
 
+  // 管理员镜像号的切换（标注者看不到）
+  "mirror.badge": { en: "Admin mirror", zh: "管理员镜像", fi: "Ylläpidon peili" },
+  "mirror.training": { en: "Training page", zh: "训练页", fi: "Harjoitussivu" },
+  "mirror.main": { en: "Annotation page", zh: "正式页", fi: "Merkintäsivu" },
+
   // 正式阶段回看训练（只读）
   "review.open": { en: "Training review", zh: "训练回顾", fi: "Harjoittelun kertaus" },
   "review.title": { en: "Look back at your training", zh: "回看训练",

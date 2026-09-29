@@ -32,6 +32,21 @@ import GuideBook from "./components/GuideBook";
 import TaskSidebar from "./components/TaskSidebar";
 import Workspace from "./components/Workspace";
 
+// 管理员镜像号看的是训练页还是正式页。只有镜像号会用到，普通账号服务端忽略这个参数。
+const MIRROR_VIEW_KEY = "xmer-mirror-view";
+
+function switchMirrorView(view: "training" | "main") {
+  try {
+    localStorage.setItem(MIRROR_VIEW_KEY, view);
+  } catch {
+    /* 存不下就只切这一次 */
+  }
+  // 整页重载而不是就地换队列：任务、轮次、提交全都跟着阶段走，就地换容易留下上一批的状态
+  const url = new URL(location.href);
+  url.searchParams.set("view", view);
+  location.href = url.toString();
+}
+
 function remembered(key: string, fallback: string) {
   try {
     return localStorage.getItem(key) || fallback;
@@ -58,6 +73,8 @@ export default function App() {
     phase: string;
     // 训练过、正式阶段可以回看复盘的模态
     trainedModalities: Modality[];
+    // 管理员镜像号：可在训练页与正式页之间切换
+    mirror: boolean;
   } | null>(null);
   // 正式阶段的「训练回顾」：先选模态，再打开那一段的复盘
   const [pickingReview, setPickingReview] = useState(false);
@@ -143,9 +160,13 @@ export default function App() {
     setReady(false);
     void (async () => {
       try {
-        const response = await fetch(API_BASE + "/me", {
-          headers: { authorization: "Bearer " + token },
-        });
+        const view =
+          new URL(location.href).searchParams.get("view") ??
+          remembered(MIRROR_VIEW_KEY, "");
+        const response = await fetch(
+          API_BASE + "/me" + (view ? "?view=" + encodeURIComponent(view) : ""),
+          { headers: { authorization: "Bearer " + token } },
+        );
         if (response.status === 401 || response.status === 403)
           throw new Error(t("err.badToken"));
         if (!response.ok) throw new Error(t("err.offline"));
@@ -156,6 +177,7 @@ export default function App() {
           name: me.display_name || me.annotator_id,
           phase: me.phase,
           trainedModalities: me.training_modalities ?? [],
+          mirror: Boolean(me.mirror),
         });
         if (!me.tasks.length) {
           setTasks([]);
@@ -304,6 +326,22 @@ export default function App() {
           </strong>
         </div>
         <div className="header-actions">
+          {/* 管理员镜像号：页面与标注者一比一，外加这一组切换，标注者看不到 */}
+          {profile?.mirror && (
+            <div className="mirror-switch" role="group" aria-label={t("mirror.badge")}>
+              <span className="mirror-badge">{t("mirror.badge")}</span>
+              {(["training", "main"] as const).map((view) => (
+                <button
+                  key={view}
+                  className={profile.phase === view ? "active" : ""}
+                  aria-pressed={profile.phase === view}
+                  onClick={() => profile.phase !== view && switchMirrorView(view)}
+                >
+                  {t(view === "training" ? "mirror.training" : "mirror.main")}
+                </button>
+              ))}
+            </div>
+          )}
           {profile && (
             <div className="annotator-identity">
               <span className="identity-text">
