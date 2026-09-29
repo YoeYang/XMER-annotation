@@ -132,11 +132,12 @@ Roihu `~/xmer-secrets/P1_accounts_20260929.csv`（均 chmod 600，不进 git）�
 
 **强制先训练**：正式账号训练两维交齐之前，服务端只发训练，正式任务请求一律 404。
 
-**Yoe 的预览号 `YOE-MAIN-01`**（phase=main、zh、没有训练分配 → 直接进正式页）：
-照抄 `P1-ZH-01` 正式队列每个模态的前 20 条，共 100 条（含中文 text/full 30 条），
-只用来看正式标注页面。**它的提交不是研究数据，分析与导出时排除**；不需要时
-`manage.py drop-annotator --annotator-id YOE-MAIN-01` 删掉。链接在两处 secrets 目录的
-`YOE-MAIN_20260929.csv`。编号不以 `P1-` 开头，`plan --stage 1` 不会把它算进去。
+**管理员镜像号 `ADMIN-ZH-01` / `ADMIN-EN-01`**（2026-09-29 版，`YOE-MAIN-01` 已删）：
+队列用 `manage.py mirror-queue` 照抄 `P1-ZH-01` / `P1-EN-01`（训练 + 正式），页面与标注者
+一比一；但不受训练关卡约束，顶栏橙色切换条可在「训练页 / 正式页」之间随意切换
+（`/me?view=`，普通账号忽略这个参数），训练复盘不等交齐就给参考曲线，永不写 `trained_at`。
+给 Yoe 看界面、改界面用，**它们的任何数据都不是研究数据**。链接在两处 secrets 目录的
+`ADMIN_accounts_20260929.csv`。判定规则见 `app/config.py` 的 `MIRROR_ACCOUNT`。
 
 上线前备份：`xmer_annotation-20260929-225048.sql.gz`（sha256 `2748b5bf…1ae4a4`），
 ECS `backups/` 与 Roihu `XMER/db-backups/` 各一份。
