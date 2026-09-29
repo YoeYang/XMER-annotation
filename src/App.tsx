@@ -3,6 +3,7 @@ import {
   Activity,
   BookOpen,
   CornerDownLeft,
+  GraduationCap,
   MousePointer,
   MousePointerClick,
 } from "lucide-react";
@@ -55,7 +56,11 @@ export default function App() {
   const [profile, setProfile] = useState<{
     name: string;
     phase: string;
+    // 训练过、正式阶段可以回看复盘的模态
+    trainedModalities: Modality[];
   } | null>(null);
+  // 正式阶段的「训练回顾」：先选模态，再打开那一段的复盘
+  const [pickingReview, setPickingReview] = useState(false);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [error, setError] = useState("");
@@ -150,6 +155,7 @@ export default function App() {
         setProfile({
           name: me.display_name || me.annotator_id,
           phase: me.phase,
+          trainedModalities: me.training_modalities ?? [],
         });
         if (!me.tasks.length) {
           setTasks([]);
@@ -309,6 +315,17 @@ export default function App() {
             <BookOpen size={15} />
             {t("book.reopen")}
           </button>
+          {/* 正式阶段回看训练：只读，看素材、自己当时的曲线、参考曲线与解释。
+              训练阶段不需要——侧栏每段标完就有「看对比」。 */}
+          {!training && !!profile?.trainedModalities.length && (
+            <button
+              className="ghost book-open"
+              onClick={() => setPickingReview(true)}
+            >
+              <GraduationCap size={15} />
+              {t("review.open")}
+            </button>
+          )}
           <LangSwitch />
         </div>
       </header>
@@ -390,6 +407,37 @@ export default function App() {
               remembered(seenKey, "") === "yes" ? "book.close" : "book.start"
             }
           />
+        </div>
+      )}
+
+      {pickingReview && profile && (
+        <div className="modal-backdrop" onClick={() => setPickingReview(false)}>
+          <section
+            className="modality-guide review-picker"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="review-picker-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="review-picker-title">{t("review.title")}</h2>
+            <p className="guide-lead">{t("review.lead")}</p>
+            <div className="review-picker-list">
+              {profile.trainedModalities.map((modality) => (
+                <button
+                  key={modality}
+                  onClick={() => {
+                    setPickingReview(false);
+                    setReviewing(modality);
+                  }}
+                >
+                  {t(("modality." + modality) as Key)}
+                </button>
+              ))}
+            </div>
+            <button className="ghost" onClick={() => setPickingReview(false)}>
+              {t("debrief.close")}
+            </button>
+          </section>
         </div>
       )}
 

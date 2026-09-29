@@ -280,6 +280,19 @@ const S = {
   },
   "debrief.review": { en: "Compare", zh: "看对比", fi: "Vertaa" },
 
+  // 正式阶段回看训练（只读）
+  "review.open": { en: "Training review", zh: "训练回顾", fi: "Harjoittelun kertaus" },
+  "review.title": { en: "Look back at your training", zh: "回看训练",
+                    fi: "Katso harjoittelua uudelleen" },
+  "review.lead": {
+    en: "Pick a material to see the training clips, the curves you drew, "
+      + "the reference curves and the explanations. This is read-only and "
+      + "does not affect your annotation tasks.",
+    zh: "选一种材料，查看训练素材、你当时标的曲线、参考曲线和解释。只能查看，不影响正式标注。",
+    fi: "Valitse materiaali nähdäksesi harjoitusklipit, piirtämäsi käyrät, "
+      + "vertailukäyrät ja selitykset. Vain luettavissa, ei vaikuta merkintätehtäviin.",
+  },
+
   "guide.dims": { en: "Dimensions", zh: "标注维度", fi: "Ulottuvuudet" },
   "guide.valence": {
     en: "−1 negative (sad, angry) · 0 neutral · +1 positive (happy, cheerful)",

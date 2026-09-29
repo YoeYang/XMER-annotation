@@ -156,3 +156,32 @@ def test_preview_accounts_never_unlock(client, session):
     finish(session, "TRZH-01", "TR-face")
     assert task_ids(client) == ("training", ["TR-face"])
     assert session.get(Annotator, "TRZH-01").trained_at is None
+
+
+# ----------------------------------------------------- 正式阶段回看训练（方案 A）
+
+
+def test_me_lists_the_modalities_available_for_review(client, session, stage1):
+    """解锁之后仍要知道训练过哪些模态，前端据此给出「训练回顾」入口。"""
+    finish(session, "P1-ZH-01", "TR-face")
+    finish(session, "P1-ZH-01", "TR-audio")
+    body = client.get("/api/me", headers=HEADERS).json()
+    assert body["phase"] == "main"
+    assert body["training_modalities"] == ["face", "audio"]
+
+
+def test_every_trained_modality_stays_reviewable_after_unlock(client, session, stage1):
+    finish(session, "P1-ZH-01", "TR-face")
+    finish(session, "P1-ZH-01", "TR-audio")
+    client.get("/api/me", headers=HEADERS)
+    for modality in ("face", "audio"):
+        assert client.get(f"/api/training/debrief/{modality}", headers=HEADERS).status_code == 200
+
+
+def test_an_account_without_training_has_nothing_to_review(client, session):
+    session.add(Annotator(annotator_id="P1-EN-07", token_hash=hash_token("token-p1"),
+                          phase="main", language="en"))
+    make_task(session, "MAIN-1", "face")
+    assign(session, "P1-EN-07", "MAIN-1", "main", 0)
+    session.commit()
+    assert client.get("/api/me", headers=HEADERS).json()["training_modalities"] == []

@@ -171,6 +171,17 @@ def read_me(
         )
         .order_by(Assignment.order_index, MODALITY_RANK)
     ).all()
+    trained = set(
+        session.scalars(
+            select(Task.modality)
+            .join(Assignment, Assignment.task_id == Task.task_id)
+            .where(
+                Assignment.annotator_id == annotator.annotator_id,
+                Assignment.status == "active",
+                Assignment.phase == "training",
+            )
+        )
+    )
     return MeOut(
         annotator_id=annotator.annotator_id,
         display_name=annotator.display_name,
@@ -179,6 +190,7 @@ def read_me(
             _task_out(task, order_index, display_id)
             for task, order_index, display_id in rows
         ],
+        training_modalities=[m for m in MODALITIES if m in trained],
     )
 
 
