@@ -23,6 +23,11 @@ ZH_ONLY_DATASETS = ("chsims",)
 ZH_ONLY_MODALITIES = ("text", "audiovisual")
 """这两者的交集只能分给 `zh` 标注者。数据集由样本名前缀判定（`chsims_…`）。"""
 
+ZH_OPEN_QUOTA = 300
+"""中文标注者的英文定额：每人在 ZH_ONLY_MODALITIES 的每个模态上，另拿这么多条
+**非** chsims 的子任务（Yoe 2026-09-29 定，阶段一）。用来量中文组与英文组在
+同类材料上的系统差异；不设的话他们一条英文 text/full 都拿不到。"""
+
 
 def dataset_of(sample_id: str) -> str:
     return sample_id.split("_", 1)[0]

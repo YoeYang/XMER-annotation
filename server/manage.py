@@ -45,6 +45,7 @@ from app.config import (
     STAGE_ACCOUNT,
     ZH_ONLY_DATASETS,
     ZH_ONLY_MODALITIES,
+    ZH_OPEN_QUOTA,
     dataset_of,
     load_settings,
     stage_account_prefix,
@@ -260,9 +261,10 @@ def cmd_plan(args):
     if not languages:
         sys.exit(f"阶段 {args.stage} 下没有在册账号，请先跑 create-annotators --stage {args.stage}")
 
+    quota = {modality: args.zh_open_quota for modality in ZH_ONLY_MODALITIES}
     try:
         rows = build_plan(
-            pool, [], languages, list(MODALITIES), zh_only,
+            pool, [], languages, list(MODALITIES), zh_only, quota,
             coverage=args.coverage, seed=args.seed, per_annotator=args.per_annotator,
         )
     except AllocationShortfall as exc:
@@ -300,14 +302,22 @@ def cmd_plan(args):
         print(f"  ⚠ 语言违规 {report['language_violations']} 条（中文子任务落到了英文标注者）")
     else:
         print("  ✓ 中文子任务全部落在中文标注者")
+    print(f"  中文定额    每位中文标注者另拿非专属 {'、'.join(ZH_ONLY_MODALITIES)} 各 {args.zh_open_quota} 条")
     print(f"  跨模态重复  {report['repeat_samples']} 人次"
           f"（同一人看到同一视频的多个模态；按定稿口径允许）")
-    print("  每人条数（其中只给中文的）：")
+    # 每人明细：受语言约束的模态拆成「中文专属 / 其余」两列
+    columns = []
+    for modality in MODALITIES:
+        if modality in ZH_ONLY_MODALITIES:
+            columns += [(f"{modality}·中文", modality, True), (modality, modality, False)]
+        else:
+            columns.append((modality, modality, False))
+    print("  每人明细：")
+    print("    " + f"{'':12s}{'合计':>7}" + "".join(f"{title:>15s}" for title, _, _ in columns))
     for annotator_id, total in report["per_annotator"].items():
-        print(f"    {annotator_id:12s} {total:>6}  ({report['zh_only_load'][annotator_id]})")
-    print("  每人各模态条数区间：")
-    for modality, (lo, hi) in report["modality_min_max"].items():
-        print(f"    {modality:12s} {lo}~{hi}")
+        mix = report["mix"][annotator_id]
+        cells = "".join(f"{mix.get((m, ex), 0):>15d}" for _, m, ex in columns)
+        print(f"    {annotator_id:12s}{total:>7d}{cells}")
     print("可直接用表格软件修改后，再跑 apply-plan 回填。")
 
 
@@ -671,6 +681,11 @@ def main():
     plan.add_argument(
         "--per-annotator", type=int, default=0,
         help="每人最多多少个子任务，0 表示不限。排不下会报错而不是悄悄截断。",
+    )
+    plan.add_argument(
+        "--zh-open-quota", type=int, default=ZH_OPEN_QUOTA,
+        help=f"每位中文标注者另拿多少条非 chsims 的 text / full（各模态分别计），"
+             f"默认 {ZH_OPEN_QUOTA}。0 表示中文标注者只标 chsims 的 text / full。",
     )
     plan.add_argument("--out", default="assignment_plan.csv")
     plan.set_defaults(func=cmd_plan)

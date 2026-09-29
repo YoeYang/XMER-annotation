@@ -41,11 +41,25 @@ STAGE2 = {
 }
 
 
+# 测试池子小，定额按比例缩小（真实池子阶段一是 300）
+QUOTA = {"text": 40, "audiovisual": 40}
+
+
 def plan(**kw):
     args = dict(pool_ids=POOL, anchor_ids=[], annotator_languages=STAGE1,
-                modalities=list(MODALITIES), zh_only=ZH_ONLY, coverage=2, seed=1)
+                modalities=list(MODALITIES), zh_only=ZH_ONLY, zh_open_quota=QUOTA,
+                coverage=2, seed=1)
     args.update(kw)
     return build_plan(**args)
+
+
+def open_count(rows, annotator, modality):
+    """某人在某模态上拿到的非中文专属子任务数。"""
+    return sum(
+        1 for row in rows
+        if row.annotator_id == annotator and row.modality == modality
+        and (row.sample_id, row.modality) not in ZH_ONLY
+    )
 
 
 def report_of(rows, languages=STAGE1, zh_only=ZH_ONLY):
@@ -154,6 +168,47 @@ def test_phase_two_three_chinese_at_coverage_three():
     for annotator, language in STAGE2.items():
         if language == "zh":
             assert report["zh_only_load"][annotator] == len(ZH_ONLY)
+
+
+def test_chinese_annotators_get_exactly_their_english_quota():
+    """中文标注者也要标英文 text/full，才能量出中英两组在同类材料上的差异。
+    定额是精确值，不多不少。"""
+    rows = plan()
+    for annotator in ("P1-ZH-01", "P1-ZH-02"):
+        for modality, n in QUOTA.items():
+            assert open_count(rows, annotator, modality) == n, (annotator, modality)
+
+
+def test_quota_zero_keeps_chinese_annotators_off_english_text():
+    rows = plan(zh_open_quota={"text": 0, "audiovisual": 0})
+    for annotator in ("P1-ZH-01", "P1-ZH-02"):
+        for modality in ZH_ONLY_MODALITIES:
+            assert open_count(rows, annotator, modality) == 0
+
+
+def test_quota_beyond_the_english_supply_is_refused():
+    english_text = len([s for s in POOL if not s.startswith("chsims_")])
+    with pytest.raises(AllocationShortfall, match="定额"):
+        plan(zh_open_quota={"text": english_text, "audiovisual": 0})
+
+
+def test_quota_does_not_break_the_other_constraints():
+    rows = plan()
+    report = report_of(rows)
+    assert report["duplicate_subtasks"] == []
+    assert report["language_violations"] == 0
+    assert len(rows) == len(POOL) * len(MODALITIES) * 2
+
+
+def test_chinese_annotators_split_their_remaining_capacity_evenly():
+    """中文标注者前两遍拿走了一大半，剩下的容量要在 face/body/audio 之间均分。
+    按绝对条数拉平时出过 face 854 / body 579 / audio 414 的偏斜。"""
+    per_mod = defaultdict(Counter)
+    for row in plan():
+        per_mod[row.annotator_id][row.modality] += 1
+    for annotator in ("P1-ZH-01", "P1-ZH-02"):
+        counts = [per_mod[annotator][m] for m in ("face", "body", "audio")]
+        assert max(counts) - min(counts) <= 3, (annotator, counts)
 
 
 def test_audit_flags_a_language_violation():
