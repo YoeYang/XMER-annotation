@@ -162,6 +162,7 @@ def read_me(
     session: Session = Depends(get_session),
 ) -> MeOut:
     """`view` 只对管理员镜像号有效：`training` 或 `main`，决定这次下发哪一批。
+    不带时默认训练页——和新标注者第一次打开链接看到的一样。
     镜像号不走训练关卡、也不会被写 `trained_at`；普通账号忽略这个参数。"""
     # order_index 挂在 assignments 上而不是 tasks 上——同一个任务分给不同的人，
     # 队列位置本来就不同。所以要连着取出来，再拼进 TaskOut。
@@ -169,7 +170,7 @@ def read_me(
     # 比整条任务凭空消失容易察觉得多。
     mirror = is_mirror(annotator.annotator_id)
     if mirror:
-        phase = view if view in ("training", "main") else "main"
+        phase = view if view in ("training", "main") else "training"
     else:
         phase = _unlock_if_trained(session, annotator)
     rows = session.execute(

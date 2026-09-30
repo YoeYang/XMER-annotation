@@ -60,13 +60,18 @@ def test_mirror_copies_both_queues_in_order(world):
                    ("training", 0, "TR-face"), ("training", 1, "TR-audio")]
 
 
-def test_mirror_opens_on_main_without_training(client, world):
+def test_mirror_opens_on_training_like_a_new_annotator(client, world):
+    """和标注者一比一：第一次打开进训练页。"""
+    assert me(client) == ("training", ["TR-face", "TR-audio"], True)
+
+
+def test_mirror_can_switch_to_main_without_training(client, world):
     """管理员不标注，不能被训练关卡挡在正式页外面。"""
-    assert me(client) == ("main", ["MAIN-1", "MAIN-2"], True)
+    assert me(client, "main") == ("main", ["MAIN-1", "MAIN-2"], True)
 
 
-def test_mirror_can_switch_to_the_training_page(client, world):
-    assert me(client, "training") == ("training", ["TR-face", "TR-audio"], True)
+def test_unknown_view_falls_back_to_training(client, world):
+    assert me(client, "bogus")[0] == "training"
 
 
 def test_mirror_can_open_tasks_of_both_phases(client, world):

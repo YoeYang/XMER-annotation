@@ -489,8 +489,15 @@ export default function App() {
         <AllDone
           completed={doneCount}
           onBack={() => setCelebrating(false)}
-          // 训练与正式同一个账号：重新加载时服务端判定训练已交齐，下发正式队列
-          onStartMain={training ? () => location.reload() : undefined}
+          // 训练与正式同一个账号：重新加载时服务端判定训练已交齐，下发正式队列。
+          // 镜像号不写 trained_at，重新加载还会停在训练页，要显式切到正式页
+          onStartMain={
+            training
+              ? profile?.mirror
+                ? () => switchMirrorView("main")
+                : () => location.reload()
+              : undefined
+          }
         />
       )}
 
