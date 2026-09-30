@@ -95,19 +95,18 @@ ssh -i ~/.ssh/xmer_ecs root@47.238.255.165 \
 
 ## 更新前端静态页
 
-ECS 上没常驻 Node，用一次性容器构建（沿用 2026-09-10 的做法）：
+【2026-09-30 版】**在 Roihu 上构建，只把产物 `dist/` 传上去**。ECS 上不再保留前端源码
+（旧的 `/opt/xmer-annotation-src/` 停在 9.24、已于 9.30 删除），线上以 `annotation-static/` 为准。
 
 ```bash
-docker run --rm -v /opt/xmer-annotation-src:/src -w /src node:20-alpine \
-  sh -c "npm ci && npm run build"
+singularity exec /scratch/project_2017416/yyy2026/tmp/node20.sif \
+  sh -c "VITE_BASE_PATH=/annotation/ npm run build"
+rsync -a --delete -e "ssh -i ~/.ssh/xmer_ecs" dist/ \
+  root@47.238.255.165:/opt/xmer-label/annotation-static/
+curl -sk https://47.238.255.165.nip.io/annotation/ | grep -o 'src="[^"]*"'   # 必须是 /annotation/assets/...
 ```
 
-同一个容器也能跑前端测试，Roihu 上没有 node 不构成阻碍：
-
-```bash
-docker run --rm -v /opt/xmer-annotation-src:/src -w /src node:20-alpine \
-  sh -c "npm ci && npm test && npx tsc --noEmit"
-```
+漏了 `VITE_BASE_PATH` 整页白屏。前端测试同一个容器里跑：`npx vitest run && npx tsc --noEmit`。
 
 ## 回滚
 

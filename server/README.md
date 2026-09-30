@@ -85,6 +85,7 @@ python manage.py status
 TOK=$(docker compose exec -T backend python manage.py seed-e2e | tail -1)
 
 # 2. 跑（镜像版本必须与 package.json 里的 @playwright/test 一致，否则浏览器二进制对不上）
+#    ECS 上不常驻前端源码（9.30 起），先把仓库 rsync 到 /opt/xmer-annotation-src，跑完删掉
 docker run --rm --network host -v /opt/xmer-annotation-src:/src -w /src \
   -e E2E_BASE_URL=https://<域名> -e E2E_TOKEN="$TOK" \
   mcr.microsoft.com/playwright:v1.63.0-noble \
