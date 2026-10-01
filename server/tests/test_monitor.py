@@ -215,3 +215,15 @@ def test_task_seconds_spread_excludes_breaks(world):
     assert pace["sec_min"] == 20.0
     assert pace["sec_max"] == 540.0, "9 分钟算一条；1 小时午休不算"
     assert pace["sec_median"] == 30.0
+
+
+def test_training_subtask_in_main_queue_does_not_mean_annotating(world):
+    """10.1 误报：P1-EN-06 训练里交的子任务恰好也在正式队列，监控报「开始正式标注」。
+    没写 trained_at 的正式账号还在训练，不能算正式标注中。"""
+    session, main = world
+    session.add(Assignment(annotator_id="P1-EN-01", task_id=main[0], phase="training",
+                           order_index=99))
+    session.flush()
+    finish(session, "P1-EN-01", main[0], NOW)
+    session.commit()
+    assert row(build_monitor(session, 1, NOW), "P1-EN-01")["state"] == "training"

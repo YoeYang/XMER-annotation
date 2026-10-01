@@ -131,8 +131,13 @@ def build_monitor(session: Session, stage: int, now: datetime) -> dict:
         )
         sec_per_task, active_hours = _pace(main_times)
 
-        if main and remaining == 0:
+        # 训练子任务可能也在正式队列里（10.1 有 28 条），训练没交齐前在那几条上的提交
+        # 不代表开始了正式标注
+        in_training = bool(training) and not annotator.trained_at
+        if main and remaining == 0 and not in_training:
             state = "done"
+        elif in_training:
+            state = "training" if aid in first_seen else "not_started"
         elif main_done or touched[aid] & main:
             state = "annotating"
         elif annotator.trained_at:
