@@ -27,14 +27,20 @@ def synthetic(n=600, seed=1):
     return owners, modality_of
 
 
-def test_every_prefix_is_balanced_across_annotators():
+def test_every_prefix_of_each_modality_block_is_balanced():
+    """前端按模态分块，Yoe 一块一块标；块内任何地方停下，人与人之间都要均衡。"""
     owners, modality_of = synthetic()
     queue = pick_anchor_queue(owners, modality_of, 300)
     assert len(queue) == len(set(queue)) == 300
-    for k in (20, 50, 100, 200, 300):
-        load = Counter(a for t in queue[:k] for a in owners[t])
-        counts = [load[p] for p in PEOPLE]
-        assert max(counts) - min(counts) <= 2, (k, counts)
+    for modality in MODALITIES:
+        block = [t for t in queue if modality_of[t] == modality]
+        assert len(block) == 60
+        for k in range(6, 61, 6):
+            load = Counter(a for t in block[:k] for a in owners[t])
+            counts = [load[p] for p in PEOPLE]
+            assert max(counts) - min(counts) <= 2, (modality, k, counts)
+    total = Counter(a for t in queue for a in owners[t])
+    assert max(total.values()) - min(total[p] for p in PEOPLE) <= 3
 
 
 def test_modalities_take_turns():

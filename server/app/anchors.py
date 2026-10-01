@@ -46,10 +46,11 @@ def reference_task_ids(session: Session) -> set[str]:
 
 def pick_anchor_queue(owners: dict[str, list[str]], modality_of: dict[str, str],
                       size: int, seed: int = 0) -> list[str]:
-    """挑 `size` 条子任务，排成**任何前缀都均衡**的队列。
+    """挑 `size` 条子任务，**每个模态块的任何前缀都在标注者之间均衡**。
 
-    五个模态轮流出；每一步在当前模态里挑「两位标注者已有锚点数之和最小」的子任务，
-    同分随机。Yoe 标到哪儿停，10 个人分到的锚点数都差不多。
+    前端按模态分块显示（face → body → …），Yoe 实际是一块一块往下标的，所以均衡要在
+    块内成立：各模态分到 size/5 条，块内每一步挑「两位标注者在这个模态已有锚点数之和
+    最小」的子任务，同分随机。不管标到哪儿停，10 个人在这个模态上分到的都差不多。
     """
     rng = random.Random(seed)
     pools: dict[str, list[str]] = defaultdict(list)
@@ -57,17 +58,19 @@ def pick_anchor_queue(owners: dict[str, list[str]], modality_of: dict[str, str],
         pools[modality_of[task_id]].append(task_id)
     for pool in pools.values():
         rng.shuffle(pool)
-    load: Counter[str] = Counter()
+    load: Counter[tuple[str, str]] = Counter()
     queue: list[str] = []
+    # 轮流出各模态，只是为了让条数在模态间均分；块内顺序就是挑出来的先后
     while len(queue) < size and any(pools.values()):
         for modality in MODALITIES:
             pool = pools.get(modality)
             if not pool or len(queue) >= size:
                 continue
-            best = min(range(len(pool)), key=lambda i: sum(load[a] for a in owners[pool[i]]))
+            best = min(range(len(pool)),
+                       key=lambda i: sum(load[modality, a] for a in owners[pool[i]]))
             task_id = pool.pop(best)
             queue.append(task_id)
-            load.update(owners[task_id])
+            load.update((modality, a) for a in owners[task_id])
     return queue
 
 
