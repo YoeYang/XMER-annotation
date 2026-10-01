@@ -153,6 +153,7 @@ def test_too_little_data_gives_no_pace(world):
     session.commit()
     pace = row(build_monitor(session, 1, NOW), "P1-ZH-01")["pace"]
     assert pace["sec_per_task"] is None and pace["hours_left"] is None
+    assert pace["sec_median"] is None and pace["sec_min"] is None and pace["sec_max"] is None
     assert pace["forecast"] is None, "开标不到 6 小时不预测"
 
 
@@ -196,3 +197,21 @@ def test_endpoint_requires_admin(client, world):
     assert client.get("/api/admin/monitor").status_code == 401
     body = client.get("/api/admin/monitor?stage=1", headers=ADMIN).json()
     assert body["stage"] == 1 and body["totals"]["annotators"] == 2
+
+
+def test_task_seconds_spread_excludes_breaks(world):
+    """单条用时：上一条提交到这一条提交；超过 10 分钟的间隔是休息，不进最长。"""
+    session, main = world
+    gaps = [20, 30, 40] * 8 + [9 * 60]           # 25 个有效间隔，最长 9 分钟
+    at = NOW - timedelta(hours=3)
+    finish(session, "P1-ZH-01", main[0], at)
+    for i, gap in enumerate(gaps, start=1):
+        at += timedelta(seconds=gap)
+        finish(session, "P1-ZH-01", main[i], at)
+    at += timedelta(hours=1)                      # 午休
+    finish(session, "P1-ZH-01", main[len(gaps) + 1], at)
+    session.commit()
+    pace = row(build_monitor(session, 1, NOW), "P1-ZH-01")["pace"]
+    assert pace["sec_min"] == 20.0
+    assert pace["sec_max"] == 540.0, "9 分钟算一条；1 小时午休不算"
+    assert pace["sec_median"] == 30.0

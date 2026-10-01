@@ -9,6 +9,7 @@
 """
 
 import math
+import statistics
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -64,6 +65,20 @@ def _pace(times: list[datetime]) -> tuple[float | None, float]:
     if len(gaps) < MIN_GAPS:
         return None, active / 3600
     return active / len(gaps), active / 3600
+
+
+def _task_seconds(times: list[datetime]) -> dict:
+    """单条用时的分布：上一条提交 → 这一条提交，含熟悉、读说明与两维标注。
+
+    间隔超过 `ACTIVE_GAP` 视为中途休息，那一条不计——否则最长会被吃饭睡觉拉到几小时。
+    有效间隔不足 `MIN_GAPS` 时全部为 None。
+    """
+    times = sorted(times)
+    gaps = [(b - a).total_seconds() for a, b in zip(times, times[1:]) if b - a <= ACTIVE_GAP]
+    if len(gaps) < MIN_GAPS:
+        return {"sec_median": None, "sec_min": None, "sec_max": None}
+    return {"sec_median": round(statistics.median(gaps), 1),
+            "sec_min": round(min(gaps), 1), "sec_max": round(max(gaps), 1)}
 
 
 def build_monitor(session: Session, stage: int, now: datetime) -> dict:
@@ -159,6 +174,7 @@ def build_monitor(session: Session, stage: int, now: datetime) -> dict:
             },
             "pace": {
                 "sec_per_task": round(sec_per_task, 1) if sec_per_task else None,
+                **_task_seconds(main_times),
                 "active_hours": round(active_hours, 1),
                 "hours_left": round(remaining * sec_per_task / 3600, 1) if sec_per_task else None,
                 "needed_per_day": math.ceil(remaining / days_left) if days_left and days_left > 0 and remaining else None,

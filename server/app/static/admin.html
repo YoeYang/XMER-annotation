@@ -115,14 +115,14 @@
       <thead><tr>
         <th>标注者</th><th>状态</th><th>训练</th><th>正式完成</th>
         <th class="num">今天</th><th class="num">近 24h</th>
-        <th class="num">每条用时</th><th class="num">还需</th>
+        <th class="num">每条用时（秒）<br>平均 · 中位</th><th class="num">最短 · 最长</th><th class="num">还需</th>
         <th>能否按时</th><th>最后活动</th>
       </tr></thead>
       <tbody id="mrows"></tbody>
     </table></div>
     <p class="note">
       只列本阶段正式账号（镜像号、参考号不在内），每分钟自动刷新。两维都交了才算完成一条；
-      每条用时只算相邻两条间隔 10 分钟以内的，休息不计。开始正式标注不满 6 小时不做预测。
+      每条用时 = 上一条提交到这一条提交（含熟悉、读说明、两维标注），间隔超过 10 分钟视为休息不计；不足 20 条显示数据不足。开始正式标注不满 6 小时不做预测。
       「今天」与截止时间按芬兰时间（UTC+3）。超过 24 小时没动静标红。
     </p>
   </section>
@@ -323,7 +323,8 @@ async function loadMonitor() {
             <span class="num">${r.main.done} / ${r.main.total}</span></div></td>
         <td class="num">${r.main.today}</td>
         <td class="num">${r.main.last_24h}</td>
-        <td class="num">${p.sec_per_task ? p.sec_per_task + " 秒" : "—"}<small>已标 ${p.active_hours} h</small></td>
+        <td class="num">${p.sec_per_task ? p.sec_per_task + " · " + p.sec_median : "<span class='idle'>数据不足</span>"}<small>已标 ${p.active_hours} h</small></td>
+        <td class="num">${p.sec_min != null ? p.sec_min + " · " + p.sec_max : "—"}</td>
         <td class="num">${p.hours_left != null ? p.hours_left + " h" : "—"}</td>
         <td>${track}</td>
         <td class="${r.idle ? "warn" : ""}">${when(r.last_activity)}${r.idle ? "<small>超过 24 小时没动静</small>" : ""}</td>
