@@ -62,12 +62,23 @@
   select { font: inherit; padding: 7px 11px; border: 1px solid var(--line);
     border-radius: 6px; background: var(--surface); }
   code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  .mon { margin-bottom: 26px; }
+  .st { font-size: 11px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+  .st-not_started { background: #eef1f4; color: var(--muted); }
+  .st-training { background: #fbeee6; color: var(--warm); }
+  .st-trained { background: #e8f0f8; color: var(--cool); }
+  .st-annotating { background: #e3f1ef; color: var(--accent); }
+  .st-done { background: var(--accent); color: #fff; }
+  .warn { color: #b3261e; font-weight: 600; }
+  .ok { color: var(--accent); }
+  td small { display: block; color: var(--muted); font-size: 11px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>标注进度</h1>
-  <p class="sub">进度总览、账号发放与轮次处置。</p>
+  <p class="sub">阶段一监控、全部账号、账号发放与轮次处置。</p>
 
   <div class="bar">
     <input type="password" id="tok" placeholder="管理员令牌" autocomplete="off">
@@ -77,7 +88,29 @@
   </div>
 
   <div id="err" class="err" hidden></div>
-  <div class="totals" id="totals" hidden></div>
+
+  <section class="mon" id="mon" hidden>
+    <h2>阶段一监控 <span class="idle" id="mstamp" style="font-weight:400;font-size:12px"></span></h2>
+    <div class="totals" id="mtotals"></div>
+    <div class="scroll"><table>
+      <thead><tr>
+        <th>标注者</th><th>状态</th><th>训练</th><th>正式完成</th>
+        <th class="num">今天</th><th class="num">近 24h</th>
+        <th class="num">每条用时</th><th class="num">还需</th>
+        <th>能否按时</th><th>最后活动</th>
+      </tr></thead>
+      <tbody id="mrows"></tbody>
+    </table></div>
+    <p class="note">
+      只列本阶段正式账号（镜像号、参考号不在内），每分钟自动刷新。两维都交了才算完成一条；
+      每条用时只算相邻两条间隔 10 分钟以内的，休息不计。开始正式标注不满 6 小时不做预测。
+      「今天」与截止时间按芬兰时间（UTC+3）。超过 24 小时没动静标红。
+    </p>
+  </section>
+
+  <details id="panel-all">
+  <summary>全部账号（含镜像号、参考号）· 导出 · 删除</summary>
+  <div class="totals" id="totals" hidden style="margin-top:14px"></div>
   <div class="scroll" id="tablewrap" hidden>
     <table>
       <thead><tr>
@@ -89,6 +122,7 @@
       <tbody id="rows"></tbody>
     </table>
   </div>
+  </details>
   <details id="panel-new">
     <summary>批量生成账号</summary>
     <div class="bar">
@@ -197,8 +231,53 @@ async function load() {
   } catch (e) { fail(e.message); }
 }
 
-$("load").addEventListener("click", load);
-$("tok").addEventListener("keydown", (e) => { if (e.key === "Enter") load(); });
+const STATE = { not_started: "未开始", training: "训练中", trained: "训练完成",
+                annotating: "正式标注中", done: "已完成" };
+const when = (iso) => iso
+  ? new Date(iso).toLocaleString("zh-CN", { hour12: false, month: "numeric", day: "numeric",
+                                            hour: "2-digit", minute: "2-digit" })
+  : "<span class='idle'>—</span>";
+
+async function loadMonitor() {
+  if (!token()) return;
+  try {
+    const d = await api("/monitor?stage=1");
+    const t = d.totals;
+    const pct = t.main_total ? (t.main_done * 100 / t.main_total).toFixed(1) : 0;
+    $("mtotals").innerHTML =
+      `<div><span>已开始</span><strong>${t.started} / ${t.annotators}</strong></div>` +
+      `<div><span>训练完成</span><strong>${t.trained} / ${t.annotators}</strong></div>` +
+      `<div><span>正式完成</span><strong>${t.main_done}</strong><span>/ ${t.main_total}（${pct}%）</span></div>` +
+      `<div><span>今天完成</span><strong>${t.today}</strong></div>` +
+      `<div><span>距截止</span><strong>${d.days_left ?? "—"} 天</strong><span>${when(d.deadline)}</span></div>`;
+    $("mrows").innerHTML = d.annotators.map((r) => {
+      const p = r.pace, f = p.forecast;
+      const track = r.state === "done" ? "<span class='ok'>已完成</span>"
+        : f ? (f.on_track ? `<span class='ok'>能</span><small>${f.per_day} 条/天</small>`
+                          : `<span class='warn'>赶不上</span><small>现 ${f.per_day} / 需 ${p.needed_per_day} 条/天</small>`)
+        : `<span class='idle'>数据不足</span>${p.needed_per_day ? `<small>需 ${p.needed_per_day} 条/天</small>` : ""}`;
+      return `<tr>
+        <td><strong>${r.annotator_id}</strong></td>
+        <td><span class="st st-${r.state}">${STATE[r.state] || r.state}</span></td>
+        <td class="num">${r.training.done} / ${r.training.total}${r.training.trained_at ? `<small>${when(r.training.trained_at)}</small>` : ""}</td>
+        <td><div class="prog"><div class="track"><div class="fill" style="width:${r.main.percent}%"></div></div>
+            <span class="num">${r.main.done} / ${r.main.total}</span></div></td>
+        <td class="num">${r.main.today}</td>
+        <td class="num">${r.main.last_24h}</td>
+        <td class="num">${p.sec_per_task ? p.sec_per_task + " 秒" : "—"}<small>已标 ${p.active_hours} h</small></td>
+        <td class="num">${p.hours_left != null ? p.hours_left + " h" : "—"}</td>
+        <td>${track}</td>
+        <td class="${r.idle ? "warn" : ""}">${when(r.last_activity)}${r.idle ? "<small>超过 24 小时没动静</small>" : ""}</td>
+      </tr>`;
+    }).join("");
+    $("mstamp").textContent = "更新于 " + new Date(d.generated_at).toLocaleTimeString("zh-CN", { hour12: false });
+    $("mon").hidden = false;
+  } catch (e) { fail(e.message); }
+}
+setInterval(loadMonitor, 60000);
+
+$("load").addEventListener("click", () => { loadMonitor(); load(); });
+$("tok").addEventListener("keydown", (e) => { if (e.key === "Enter") { loadMonitor(); load(); } });
 $("dump").addEventListener("click", async () => {
   try { save("xmer-all-" + Date.now() + ".json", await api("/export")); }
   catch (e) { fail(e.message); }
@@ -309,7 +388,7 @@ $("rows").addEventListener("click", async (e) => {
   try { save("xmer-" + who + ".json", await api("/export?annotator=" + who)); }
   catch (err) { fail(err.message); }
 });
-if (token()) load();
+if (token()) { loadMonitor(); load(); }
 
 </script>
 </body>

@@ -1,6 +1,6 @@
 import secrets
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
@@ -16,6 +16,7 @@ from .assignments import (
 from .auth import get_session, hash_token, new_token
 from .export import build_export
 from .completion import completed_counts
+from .monitor import build_monitor
 from .models import (
     Annotator,
     Assignment,
@@ -124,6 +125,12 @@ def read_progress(session: Session = Depends(get_session)) -> dict:
             "in_progress": sum(r["in_progress"] for r in rows),
         },
     }
+
+
+@router.get("/monitor", dependencies=[Depends(require_admin)])
+def read_monitor(stage: int = 1, session: Session = Depends(get_session)) -> dict:
+    """某一阶段正式账号的进度、速度与能否按时完成，见 `app/monitor.py`。"""
+    return build_monitor(session, stage, datetime.now(timezone.utc))
 
 
 @router.get("/export", dependencies=[Depends(require_admin)])
