@@ -1,6 +1,6 @@
 import secrets
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
@@ -15,8 +15,9 @@ from .assignments import (
 )
 from .auth import get_session, hash_token, new_token
 from .export import build_export
-from .monitor import build_monitor
+from .monitor import LOCAL_TZ, build_monitor
 from .anchor_quality import anchor_report
+from .spotcheck import spot_check
 from .models import (
     Annotator,
     Assignment,
@@ -145,6 +146,22 @@ def read_anchor_detail(
     if session.get(Annotator, annotator_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "没有这个标注者。")
     return anchor_report(session, stage, detail_for=annotator_id)
+
+
+@router.get("/spotcheck/{annotator_id}", dependencies=[Depends(require_admin)])
+def read_spot_check(
+    annotator_id: str,
+    day: date | None = None,
+    n: int = 10,
+    seed: int = 0,
+    session: Session = Depends(get_session),
+) -> dict:
+    """每日抽查：某人某天（芬兰时间）完成的子任务里随机抽 n 条，见 `app/spotcheck.py`。"""
+    if session.get(Annotator, annotator_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "没有这个标注者。")
+    if day is None:
+        day = datetime.now(LOCAL_TZ).date()
+    return spot_check(session, annotator_id, day, n=max(1, min(n, 50)), seed=seed)
 
 
 @router.get("/export", dependencies=[Depends(require_admin)])

@@ -79,6 +79,19 @@
     padding: 8px 10px; font-size: 12px; }
   .curve svg { width: 100%; height: 70px; display: block; background: #fafbfc; border-radius: 4px; }
   .curve .head { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .spot { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; margin-top: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .card.hot { border-color: #e2a29c; }
+  .card video, .card audio { width: 100%; max-height: 190px; background: #000; border-radius: 4px; }
+  .card audio { background: none; }
+  .card .txt { font-size: 15px; line-height: 1.7; padding: 6px 2px; min-height: 48px; }
+  .card .txt span.on { background: #ffe9a8; }
+  .card .dim { margin-top: 8px; }
+  .card .dim .head { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; }
+  .card svg { width: 100%; height: 64px; display: block; background: #fafbfc; border-radius: 4px; }
+  .chip { font-size: 11px; padding: 1px 7px; border-radius: 9px; background: #fbe4e2; color: #a33a3a; margin-left: 4px; }
+  .flagbar button { font-size: 11px; padding: 2px 8px; }
+  .flagbar .cur { background: var(--accent); color: #fff; border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -133,6 +146,24 @@
       这个面板计算较重，不自动刷新。
     </p>
   </section>
+
+  <details id="panel-spot">
+    <summary>每日抽查</summary>
+    <div class="bar">
+      <select id="sp-who"></select>
+      <input type="date" id="sp-day">
+      <select id="sp-n"><option>10</option><option>20</option><option value="50">全部（最多 50）</option></select>
+      <button class="primary" id="sp-go">抽查</button>
+      <button id="sp-more">换一批</button>
+    </div>
+    <div class="totals" id="sp-sum" style="margin-top:14px"></div>
+    <div class="spot" id="sp-cards"></div>
+    <p class="note">
+      从这个人当天（芬兰时间）两维都交了的条目里随机抽。点播放，曲线上的竖线跟着素材走；
+      实线是他的，虚线是你的参考（只有锚点才有）。红色小标是自动提示：几乎不动、量程很窄（&lt;0.2）、
+      同一维重标 ≥3 版。「正常 / 存疑 / 作废」只追加一条处置记录，不删数据，标注者看不到。
+    </p>
+  </details>
 
   <details id="panel-all">
   <summary>全部账号（含镜像号、参考号）· 导出 · 删除</summary>
@@ -300,9 +331,126 @@ async function loadMonitor() {
     }).join("");
     $("mstamp").textContent = "更新于 " + new Date(d.generated_at).toLocaleTimeString("zh-CN", { hour12: false });
     $("mon").hidden = false;
+    fillWho(d.annotators);
   } catch (e) { fail(e.message); }
 }
 setInterval(loadMonitor, 60000);
+
+// ---------------------------------------------------------------- 每日抽查
+const MOD_ZH = { face: "面部", body: "身体", audio: "音频", text: "文本", audiovisual: "完整视频" };
+const PHASE_ZH = { training: "训练", main: "正式", pilot: "试标" };
+const FLAG_ZH = { ok: "正常", low_quality: "存疑", void: "作废" };
+const BASE = location.pathname.replace(/\/api\/admin\/ui\/?$/, "");
+let spSeed = 0;
+try { $("sp-day").value = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10); } catch {}
+
+function fillWho(annotators) {
+  const keep = $("sp-who").value;
+  $("sp-who").innerHTML = annotators.map((r) =>
+    `<option value="${r.annotator_id}">${r.annotator_id}（${STATE[r.state] || r.state}）</option>`).join("");
+  if (keep) $("sp-who").value = keep;
+}
+
+function curveSvg(mine, ref, duration) {
+  const x = (i) => (i * 0.1 / duration * 300).toFixed(1);
+  const path = (v) => v.map((y, i) => (i ? "L" : "M") + x(i) + "," + (32 - y * 29).toFixed(1)).join("");
+  return `<svg viewBox="0 0 300 64" preserveAspectRatio="none">
+    <line x1="0" x2="300" y1="32" y2="32" stroke="#dde4ec"/>
+    ${ref ? `<path d="${path(ref)}" fill="none" stroke="#6b7a8c" stroke-width="1.4" stroke-dasharray="4 3"/>` : ""}
+    <path d="${path(mine)}" fill="none" stroke="#2f6f6a" stroke-width="1.8"/>
+    <line class="ph" x1="0" x2="0" y1="0" y2="64" stroke="#c06a3f" stroke-width="1.2" visibility="hidden"/></svg>`;
+}
+
+function mediaHtml(item, k) {
+  const url = BASE + item.src;
+  if (item.modality === "text")
+    return `<div class="txt" id="txt${k}">…</div><button data-clock="${k}">▶ 播放</button>`;
+  if (item.modality === "audio") return `<audio id="med${k}" src="${url}" controls preload="none"></audio>`;
+  return `<video id="med${k}" src="${url}" controls preload="metadata" playsinline></video>`;
+}
+
+function dimHtml(item, dim) {
+  const d = item.dims[dim];
+  const notes = d.notes.map((n) => `<span class="chip">${n}</span>`).join("");
+  const vs = d.vs_ref ? ` · 对参考 MAE ${d.vs_ref.mae}${d.vs_ref.r != null ? " r " + d.vs_ref.r : ""}` : "";
+  return `<div class="dim"><div class="head"><span>${DIM[dim]}${notes}</span>
+      <span class="idle">量程 ${d.spread ?? "—"}${vs}</span></div>
+    ${curveSvg(d.curve, d.ref, item.duration)}
+    <div class="flagbar">${["ok", "low_quality", "void"].map((f) =>
+      `<button data-spflag="${f}" data-att="${d.attempt_id}" class="${d.flag === f ? "cur" : ""}">${FLAG_ZH[f]}</button>`).join("")}</div></div>`;
+}
+
+function movePlayhead(k, t, duration) {
+  document.querySelectorAll(`#card${k} .ph`).forEach((line) => {
+    const x = Math.min(300, t / duration * 300);
+    line.setAttribute("x1", x); line.setAttribute("x2", x); line.setAttribute("visibility", "visible");
+  });
+}
+
+async function loadTranscript(item, k) {
+  try {
+    const doc = await (await fetch(BASE + item.src)).json();
+    const tokens = doc.sentences.flatMap((s) => s.tokens);
+    $("txt" + k).innerHTML = tokens.map((w, i) =>
+      `<span data-s="${w.start}" data-e="${w.end}">${w.text}</span>`).join(" ");
+  } catch { $("txt" + k).textContent = "（文本加载失败）"; }
+}
+
+async function spotCheck() {
+  try {
+    const who = $("sp-who").value;
+    if (!who) return fail("先载入监控数据，再选人。");
+    const d = await api(`/spotcheck/${encodeURIComponent(who)}?day=${$("sp-day").value}&n=${$("sp-n").value}&seed=${spSeed}`);
+    const s = d.summary;
+    $("sp-sum").innerHTML =
+      `<div><span>当天完成</span><strong>${s.completed}</strong></div>` +
+      `<div><span>每条用时</span><strong>${s.sec_per_task ?? "—"}</strong><span>秒</span></div>` +
+      `<div><span>直线占比</span><strong>${s.flat_share == null ? "—" : Math.round(s.flat_share * 100) + "%"}</strong></div>` +
+      `<div><span>平均量程</span><strong>${s.mean_spread ?? "—"}</strong></div>`;
+    $("sp-cards").innerHTML = d.items.map((item, k) => {
+      const hot = Object.values(item.dims).some((x) => x.notes.length);
+      return `<div class="card${hot ? " hot" : ""}" id="card${k}">
+        <div class="head" style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
+          <strong>${item.task_id}</strong>
+          <span class="idle">${MOD_ZH[item.modality] || item.modality} · ${PHASE_ZH[item.phase] || item.phase} · ${when(item.completed_at)}</span></div>
+        ${mediaHtml(item, k)}${dimHtml(item, "valence")}${dimHtml(item, "arousal")}</div>`;
+    }).join("") || "<p class='idle'>这一天没有完成的条目。</p>";
+    d.items.forEach((item, k) => {
+      if (item.modality === "text") return loadTranscript(item, k);
+      const media = $("med" + k);
+      let raf = 0;
+      const tick = () => { movePlayhead(k, media.currentTime, item.duration); if (!media.paused) raf = requestAnimationFrame(tick); };
+      media.addEventListener("play", () => { cancelAnimationFrame(raf); tick(); });
+      media.addEventListener("seeked", tick);
+    });
+    spot = d;
+  } catch (e) { fail(e.message); }
+}
+let spot = null;
+
+$("sp-go").addEventListener("click", () => { spSeed = 0; spotCheck(); });
+$("sp-more").addEventListener("click", () => { spSeed += 1; spotCheck(); });
+$("sp-cards").addEventListener("click", async (e) => {
+  const k = e.target.dataset && e.target.dataset.clock;
+  if (k !== undefined && spot) {
+    const item = spot.items[k], t0 = performance.now();
+    const words = document.querySelectorAll(`#txt${k} span`);
+    const step = () => {
+      const t = (performance.now() - t0) / 1000;
+      movePlayhead(k, t, item.duration);
+      words.forEach((w) => w.classList.toggle("on", t >= +w.dataset.s && t <= +w.dataset.e));
+      if (t < item.duration) requestAnimationFrame(step);
+    };
+    step();
+    return;
+  }
+  const flag = e.target.dataset && e.target.dataset.spflag;
+  if (!flag) return;
+  try {
+    await post("/attempts/" + e.target.dataset.att + "/flags", { flag });
+    e.target.parentElement.querySelectorAll("button").forEach((b) => b.classList.toggle("cur", b === e.target));
+  } catch (err) { fail(err.message); }
+});
 
 const fmt = (v) => v == null ? "<span class='idle'>—</span>" : v;
 async function loadAnchors() {
