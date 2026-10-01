@@ -9,6 +9,7 @@
   apply-plan         把（可能已手改的）计划 CSV 写入数据库
   assign-training    按语言给正式账号挂训练分配（训练与正式同一个账号）
   mirror-queue       把标注者的队列照抄给管理员镜像号（界面检查用）
+  plan-anchors       给参考账号排一份补标锚点的队列（标注者队列不动）
   set-language       给账号打语言标签（zh 表示中英都能读）
   import-reference   把某个账号的标注导入参考曲线表，供训练页对照
   status             查看账号与分配现状
@@ -25,6 +26,7 @@ from pathlib import Path
 
 from sqlalchemy import delete, func, select
 
+from app.anchors import anchor_candidates, pick_anchor_queue
 from app.allocation import (
     AllocationShortfall,
     audit,
@@ -51,6 +53,7 @@ from app.config import (
     ZH_OPEN_QUOTA,
     dataset_of,
     is_mirror,
+    is_reference,
     load_settings,
     stage_account_prefix,
 )
@@ -409,6 +412,45 @@ def cmd_mirror_queue(args):
     for row in rows:
         counts[row.phase] += 1
     print(f"{args.to} ← {args.source}：" + "、".join(f"{k} {v} 条" for k, v in sorted(counts.items())))
+
+
+def cmd_plan_anchors(args):
+    """给参考账号（REF-xx）排补标锚点的队列（2026-10-01 版）。
+
+    从本阶段正式子任务里挑，去掉训练子任务和参考账号已交过的；任何前缀都在
+    标注者之间、模态之间均衡。标注者的队列一条不动。整体替换参考账号当前阶段的
+    队列，已开工则拒绝（走 `replace_assignments` 的开工保护）。
+    """
+    if not is_reference(args.to):
+        sys.exit(f"{args.to} 不是参考账号（REF-xx），拒绝写入锚点队列")
+    factory = session_factory()
+    with factory() as session:
+        target = session.get(Annotator, args.to)
+        if target is None:
+            sys.exit(f"{args.to} 不存在，先用 create-annotators --prefix REF 建号")
+        owners, modality_of = anchor_candidates(session, args.stage)
+        picked = pick_anchor_queue(owners, modality_of, args.size, args.seed)
+        source = dict(session.execute(select(Task.task_id, Task.source_id)).all())
+        queue = [(source[t], modality_of[t], True) for t in picked]
+        try:
+            written, missing = replace_assignments(session, args.to, target.phase, queue)
+        except ValueError as error:
+            session.rollback()
+            sys.exit(str(error))
+        if missing:
+            session.rollback()
+            sys.exit(f"有 {len(missing)} 条找不到任务：{missing[:5]}")
+        session.commit()
+    load = defaultdict(int)
+    for t in picked:
+        for a in owners[t]:
+            load[a] += 1
+    mods = defaultdict(int)
+    for t in picked:
+        mods[modality_of[t]] += 1
+    print(f"{args.to}（{target.phase}）← {written} 条锚点，候选 {len(owners)} 条")
+    print("模态：" + "、".join(f"{m} {mods[m]}" for m in MODALITIES))
+    print("每人新增锚点：" + "、".join(f"{a} {n}" for a, n in sorted(load.items())))
 
 
 def cmd_apply_plan(args):
@@ -798,6 +840,13 @@ def main():
     mirror.add_argument("--from", dest="source", required=True, help="如 P1-ZH-01")
     mirror.add_argument("--to", required=True, help="如 ADMIN-ZH-01")
     mirror.set_defaults(func=cmd_mirror_queue)
+
+    anchors = sub.add_parser("plan-anchors", help="给参考账号排补标锚点的队列")
+    anchors.add_argument("--stage", type=int, required=True)
+    anchors.add_argument("--to", required=True, help="参考账号，如 REF-02")
+    anchors.add_argument("--size", type=int, default=300)
+    anchors.add_argument("--seed", type=int, default=0)
+    anchors.set_defaults(func=cmd_plan_anchors)
 
     training = sub.add_parser("assign-training", help="按语言给正式账号挂训练分配")
     training.add_argument("--stage", type=int, required=True)

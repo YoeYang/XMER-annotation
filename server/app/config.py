@@ -54,6 +54,15 @@ def is_mirror(annotator_id: str) -> bool:
     return MIRROR_ACCOUNT.match(annotator_id) is not None
 
 
+REFERENCE_ACCOUNT = re.compile(r"^REF-\d{2,}$")
+"""Yoe 本人的参考账号（2026-10-01 版）。REF-01 挂训练参考曲线；REF-02 起补标隐藏锚点。
+它们交过的正式子任务就是锚点，拿来和分到同一子任务的标注者比对；本身不是研究数据。"""
+
+
+def is_reference(annotator_id: str) -> bool:
+    return REFERENCE_ACCOUNT.match(annotator_id) is not None
+
+
 def stage_account_id(stage: int, language: str, number: int) -> str:
     return f"P{stage}-{language.upper()}-{number:02d}"
 
