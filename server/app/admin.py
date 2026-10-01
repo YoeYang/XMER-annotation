@@ -16,6 +16,7 @@ from .assignments import (
 from .auth import get_session, hash_token, new_token
 from .export import build_export
 from .monitor import build_monitor
+from .anchor_quality import anchor_report
 from .models import (
     Annotator,
     Assignment,
@@ -128,6 +129,22 @@ def read_progress(session: Session = Depends(get_session)) -> dict:
 def read_monitor(stage: int = 1, session: Session = Depends(get_session)) -> dict:
     """某一阶段正式账号的进度、速度与能否按时完成，见 `app/monitor.py`。"""
     return build_monitor(session, stage, datetime.now(timezone.utc))
+
+
+@router.get("/anchors", dependencies=[Depends(require_admin)])
+def read_anchors(stage: int = 1, session: Session = Depends(get_session)) -> dict:
+    """锚点完成情况与每人和参考的接近程度，见 `app/anchor_quality.py`。"""
+    return anchor_report(session, stage)
+
+
+@router.get("/anchors/{annotator_id}", dependencies=[Depends(require_admin)])
+def read_anchor_detail(
+    annotator_id: str, stage: int = 1, session: Session = Depends(get_session)
+) -> dict:
+    """某位标注者每条锚点的两条曲线（他的 vs 参考），供逐条查看。"""
+    if session.get(Annotator, annotator_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "没有这个标注者。")
+    return anchor_report(session, stage, detail_for=annotator_id)
 
 
 @router.get("/export", dependencies=[Depends(require_admin)])

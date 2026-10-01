@@ -73,6 +73,12 @@
   .warn { color: #b3261e; font-weight: 600; }
   .ok { color: var(--accent); }
   td small { display: block; color: var(--muted); font-size: 11px; }
+  .curves { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 12px; margin-top: 12px; }
+  .curve { background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; }
+  .curve svg { width: 100%; height: 70px; display: block; background: #fafbfc; border-radius: 4px; }
+  .curve .head { display: flex; justify-content: space-between; margin-bottom: 4px; }
 </style>
 </head>
 <body>
@@ -105,6 +111,26 @@
       只列本阶段正式账号（镜像号、参考号不在内），每分钟自动刷新。两维都交了才算完成一条；
       每条用时只算相邻两条间隔 10 分钟以内的，休息不计。开始正式标注不满 6 小时不做预测。
       「今天」与截止时间按芬兰时间（UTC+3）。超过 24 小时没动静标红。
+    </p>
+  </section>
+
+  <section class="mon" id="anc" hidden>
+    <h2>锚点质量 <button id="ancload" style="font-size:12px;padding:3px 10px">刷新</button></h2>
+    <div class="totals" id="atotals"></div>
+    <div class="scroll"><table>
+      <thead><tr>
+        <th>标注者</th><th class="num">锚点 已比对 / 就绪</th>
+        <th class="num">效价 MAE</th><th class="num">唤醒 MAE</th>
+        <th class="num">效价 r</th><th class="num">唤醒 r</th><th></th><th></th>
+      </tr></thead>
+      <tbody id="arows2"></tbody>
+    </table></div>
+    <div id="adetail"></div>
+    <p class="note">
+      锚点 = 你在 REF 账号上两维都标完的正式子任务（训练子任务除外）；「就绪」是其中分给这个人的，
+      「已比对」是他也交了的。MAE 是两条曲线平均差多少（量程 -1…1，越小越接近）；
+      r 是走势相关（任一边几乎不动时不算）。平均 MAE 超过全组中位数 1.5 倍、且比对 ≥ 5 条的标红。
+      这个面板计算较重，不自动刷新。
     </p>
   </section>
 
@@ -278,8 +304,62 @@ async function loadMonitor() {
 }
 setInterval(loadMonitor, 60000);
 
-$("load").addEventListener("click", () => { loadMonitor(); load(); });
-$("tok").addEventListener("keydown", (e) => { if (e.key === "Enter") { loadMonitor(); load(); } });
+const fmt = (v) => v == null ? "<span class='idle'>—</span>" : v;
+async function loadAnchors() {
+  if (!token()) return;
+  try {
+    const d = await api("/anchors?stage=1");
+    const ref = d.reference;
+    $("atotals").innerHTML =
+      `<div><span>你已标完的锚点</span><strong>${ref.done}</strong></div>` +
+      `<div><span>补标队列 REF-02</span><strong>${ref.done_from_queue} / ${ref.queued}</strong></div>` +
+      `<div><span>全组 MAE 中位数</span><strong>${d.baseline_mae ?? "—"}</strong></div>`;
+    $("arows2").innerHTML = d.annotators.map((r) => `<tr>
+      <td><strong>${r.annotator_id}</strong></td>
+      <td class="num">${r.compared} / ${r.ready}</td>
+      <td class="num">${fmt(r.mae_valence)}</td><td class="num">${fmt(r.mae_arousal)}</td>
+      <td class="num">${fmt(r.r_valence)}</td><td class="num">${fmt(r.r_arousal)}</td>
+      <td>${r.outlier ? "<span class='warn'>偏差大</span>" : ""}</td>
+      <td>${r.compared ? `<button data-anc="${r.annotator_id}">逐条看</button>` : ""}</td>
+    </tr>`).join("");
+    $("anc").hidden = false;
+  } catch (e) { fail(e.message); }
+}
+
+function spark(mine, ref) {
+  const n = Math.max(mine.length, ref.length, 2);
+  const path = (v) => v.map((y, i) =>
+    (i ? "L" : "M") + (i * 200 / (n - 1)).toFixed(1) + "," + (35 - y * 32).toFixed(1)).join("");
+  return `<svg viewBox="0 0 200 70" preserveAspectRatio="none">
+    <line x1="0" x2="200" y1="35" y2="35" stroke="#dde4ec"/>
+    <path d="${path(ref)}" fill="none" stroke="#6b7a8c" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <path d="${path(mine)}" fill="none" stroke="#2f6f6a" stroke-width="1.8"/></svg>`;
+}
+
+$("ancload").addEventListener("click", loadAnchors);
+$("arows2").addEventListener("click", async (e) => {
+  const who = e.target.dataset && e.target.dataset.anc;
+  if (!who) return;
+  try {
+    const d = await api("/anchors/" + encodeURIComponent(who) + "?stage=1");
+    const cards = [];
+    for (const item of d.detail.items) {
+      for (const dim of ["valence", "arousal"]) {
+        const c = item[dim];
+        if (!c) continue;
+        cards.push(`<div class="curve"><div class="head">
+          <span>${item.task_id} · ${DIM[dim]}</span>
+          <span>MAE ${c.mae ?? "—"} · r ${c.r ?? "—"}</span></div>${spark(c.mine, c.ref)}</div>`);
+      }
+    }
+    $("adetail").innerHTML = `<h2 style="margin-top:18px">${who} 的锚点
+      <span class="idle" style="font-size:12px;font-weight:400">实线 = ${who}，虚线 = 你的参考；上正下负</span></h2>
+      <div class="curves">${cards.join("")}</div>`;
+  } catch (err) { fail(err.message); }
+});
+
+$("load").addEventListener("click", () => { loadMonitor(); loadAnchors(); load(); });
+$("tok").addEventListener("keydown", (e) => { if (e.key === "Enter") { loadMonitor(); loadAnchors(); load(); } });
 $("dump").addEventListener("click", async () => {
   try { save("xmer-all-" + Date.now() + ".json", await api("/export")); }
   catch (e) { fail(e.message); }
@@ -390,7 +470,7 @@ $("rows").addEventListener("click", async (e) => {
   try { save("xmer-" + who + ".json", await api("/export?annotator=" + who)); }
   catch (err) { fail(err.message); }
 });
-if (token()) { loadMonitor(); load(); }
+if (token()) { loadMonitor(); loadAnchors(); load(); }
 
 </script>
 </body>
