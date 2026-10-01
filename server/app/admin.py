@@ -15,7 +15,6 @@ from .assignments import (
 )
 from .auth import get_session, hash_token, new_token
 from .export import build_export
-from .completion import completed_counts
 from .monitor import build_monitor
 from .models import (
     Annotator,
@@ -26,7 +25,7 @@ from .models import (
     Submission,
     Task,
 )
-from .config import MODALITIES, PHASES
+from .config import DIMENSIONS, MODALITIES, PHASES
 from .timeutils import to_utc_iso
 
 router = APIRouter(prefix="/api/admin")
@@ -53,65 +52,63 @@ def _iso(value: datetime | None) -> str | None:
 
 @router.get("/progress", dependencies=[Depends(require_admin)])
 def read_progress(session: Session = Depends(get_session)) -> dict:
-    """各标注者的进度总览。以任务为单位统计，不是以样本为单位。"""
-    assigned = dict(
-        session.execute(
-            select(Assignment.annotator_id, func.count())
-            .group_by(Assignment.annotator_id)
-        ).all()
-    )
-    anchors = dict(
-        session.execute(
-            select(Assignment.annotator_id, func.count())
-            .where(Assignment.is_anchor.is_(True))
-            .group_by(Assignment.annotator_id)
-        ).all()
-    )
+    """各标注者的进度总览。以任务为单位统计，不是以样本为单位。
+
+    **只算当前有效分配里的任务。** 队列换过的账号（如 REF-01 交了 54 条后队列换成 1 条），
+    拿全部历史提交去除当前分配数会算出 5400%。历史提交另列 `submitted_all`，数据本身不动。
+    """
+    queue: dict[str, set[str]] = defaultdict(set)
+    anchors: Counter[str] = Counter()
+    for annotator_id, task_id, is_anchor in session.execute(
+        select(Assignment.annotator_id, Assignment.task_id, Assignment.is_anchor)
+        .where(Assignment.status == "active")
+    ):
+        queue[annotator_id].add(task_id)
+        anchors[annotator_id] += bool(is_anchor)
     # V3 的一个子任务要标两个维度，**两个都交了才算标完**。
     # 按 task_id 去重的话，只标了效价的子任务也会被算成完成——
     # 进度表看着漂亮，交上来的数据缺一半维度。
-    done = completed_counts(session)
-    # 交了但还没交齐两维的，单独列出来：这是催办时最该看的一列
-    partial = dict(
-        session.execute(
-            select(
-                Submission.annotator_id, func.count(func.distinct(Submission.task_id))
-            ).group_by(Submission.annotator_id)
-        ).all()
-    )
-    started = dict(
-        session.execute(
-            select(
-                Attempt.annotator_id, func.count(func.distinct(Attempt.task_id))
-            )
-            .where(Attempt.mode == "annotation")
-            .group_by(Attempt.annotator_id)
-        ).all()
-    )
+    dims: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+    for annotator_id, task_id, dimension in session.execute(
+        select(Submission.annotator_id, Submission.task_id, Submission.dimension).distinct()
+    ):
+        dims[annotator_id][task_id].add(dimension)
+    started: dict[str, set[str]] = defaultdict(set)
+    for annotator_id, task_id in session.execute(
+        select(Attempt.annotator_id, Attempt.task_id).distinct()
+        .where(Attempt.mode == "annotation")
+    ):
+        started[annotator_id].add(task_id)
     last_seen = dict(
         session.execute(
             select(Attempt.annotator_id, func.max(Attempt.server_received_at))
             .group_by(Attempt.annotator_id)
         ).all()
     )
+    both = set(DIMENSIONS)
 
     rows = []
     for annotator in session.scalars(
         select(Annotator).order_by(Annotator.phase, Annotator.annotator_id)
     ):
         aid = annotator.annotator_id
+        mine = queue[aid]
+        touched = {t for t in dims[aid] if t in mine}
+        done = sum(1 for t in touched if dims[aid][t] >= both)
         rows.append(
             {
                 "annotator_id": aid,
                 "display_name": annotator.display_name,
                 "phase": annotator.phase,
                 "active": annotator.active,
-                "assigned": assigned.get(aid, 0),
-                "anchors": anchors.get(aid, 0),
-                "started": started.get(aid, 0),
-                "submitted": done.get(aid, 0),
-                # 动过但两维还没齐的子任务数
-                "in_progress": partial.get(aid, 0) - done.get(aid, 0),
+                "assigned": len(mine),
+                "anchors": anchors[aid],
+                "started": len(started[aid] & mine),
+                "submitted": done,
+                # 动过但两维还没齐的子任务数：这是催办时最该看的一列
+                "in_progress": len(touched) - done,
+                # 全部历史提交（含已不在队列里的），只作参照
+                "submitted_all": sum(1 for d in dims[aid].values() if d >= both),
                 "last_activity": _iso(last_seen.get(aid)),
             }
         )

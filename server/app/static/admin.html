@@ -158,7 +158,8 @@
   </details>
 
   <p class="note">
-    「已开始」「已提交」按任务去重计数：同一任务提交多个版本仍算一个。
+    「已开始」「已提交」只算<strong>当前队列</strong>里的任务，按任务去重：同一任务提交多个版本仍算一个。
+    队列换过的账号另有灰字「历史提交」，那些数据仍在、照常导出。
     单人导出的结构与 V1 一致，可直接交给 <code>scripts/plot_va_curves.py</code>。
   </p>
 </div>
@@ -217,7 +218,8 @@ async function load() {
         <td class="num">${r.assigned}</td>
         <td class="num">${r.anchors}</td>
         <td class="num">${r.started}</td>
-        <td class="num">${r.submitted}</td>
+        <td class="num">${r.submitted}${r.submitted_all !== r.submitted
+            ? `<small>历史提交 ${r.submitted_all}</small>` : ""}</td>
         <td><div class="prog"><div class="track"><div class="fill" style="width:${pct}%"></div></div>
             <span class="num">${pct}%</span></div></td>
         <td>${seen}</td>
