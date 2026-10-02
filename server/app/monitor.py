@@ -16,8 +16,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .config import DIMENSIONS, STAGE_ACCOUNT
-from .models import Annotator, Assignment, Attempt, Submission
+from .config import DIMENSIONS, MODALITIES, STAGE_ACCOUNT
+from .models import Annotator, Assignment, Attempt, Submission, Task
 from .timeutils import to_utc_iso
 
 # 阶段一截止 10.7 当天结束。按芬兰时间：10.25 之前是夏令时 UTC+3，整个阶段一都在这之前
@@ -112,6 +112,7 @@ def build_monitor(session: Session, stage: int, now: datetime) -> dict:
     ):
         touched[annotator_id].add(task_id)
     done = _completion_times(session, ids)
+    modality_of = dict(session.execute(select(Task.task_id, Task.modality)).all())
 
     local_midnight = now.astimezone(LOCAL_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
     days_left = (deadline - now).total_seconds() / 86400 if deadline else None
@@ -175,6 +176,12 @@ def build_monitor(session: Session, stage: int, now: datetime) -> dict:
                 "total": len(main),
                 "percent": math.floor(main_done * 100 / len(main)) if main else 0,
                 "today": sum(1 for t in main_times if t >= local_midnight),
+                # 队列按模态分块（face → body → audio → text → full），看得出标到哪一块了
+                "by_modality": {
+                    m: {"done": sum(1 for t in finished if t in main and modality_of.get(t) == m),
+                        "total": sum(1 for t in main if modality_of.get(t) == m)}
+                    for m in MODALITIES
+                },
                 "last_24h": recent,
             },
             "pace": {

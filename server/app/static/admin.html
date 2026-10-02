@@ -114,7 +114,7 @@
     <div class="scroll"><table>
       <thead><tr>
         <th>标注者</th><th>状态</th><th>训练</th><th>正式完成</th>
-        <th class="num">今天</th><th class="num">近 24h</th>
+        <th>分模态完成<br><span style="font-weight:400">面 · 身 · 音 · 文 · 全</span></th><th class="num">今天</th><th class="num">近 24h</th>
         <th class="num">每条用时（秒）<br>平均 · 中位</th><th class="num">最短 · 最长</th><th class="num">还需</th>
         <th>能否按时</th><th>最后活动</th>
       </tr></thead>
@@ -321,6 +321,11 @@ async function loadMonitor() {
         <td class="num">${r.training.done} / ${r.training.total}${r.training.trained_at ? `<small>${when(r.training.trained_at)}</small>` : ""}</td>
         <td><div class="prog"><div class="track"><div class="fill" style="width:${r.main.percent}%"></div></div>
             <span class="num">${r.main.done} / ${r.main.total}</span></div></td>
+        <td style="white-space:nowrap;font-size:12px">${["face", "body", "audio", "text", "audiovisual"].map((m) => {
+          const b = r.main.by_modality[m];
+          const cls = b.total && b.done >= b.total ? "ok" : b.done ? "" : "idle";
+          return `<span class="${cls}" title="${MOD_ZH[m]} ${b.done}/${b.total}">${b.done}/${b.total}</span>`;
+        }).join(" · ")}</td>
         <td class="num">${r.main.today}</td>
         <td class="num">${r.main.last_24h}</td>
         <td class="num">${p.sec_per_task ? p.sec_per_task + " · " + p.sec_median : "<span class='idle'>数据不足</span>"}<small>已标 ${p.active_hours} h</small></td>

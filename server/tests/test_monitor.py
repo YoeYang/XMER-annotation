@@ -227,3 +227,17 @@ def test_training_subtask_in_main_queue_does_not_mean_annotating(world):
     finish(session, "P1-EN-01", main[0], NOW)
     session.commit()
     assert row(build_monitor(session, 1, NOW), "P1-EN-01")["state"] == "training"
+
+
+def test_progress_by_modality(world):
+    session, main = world
+    for tid in main[:3]:
+        finish(session, "P1-ZH-01", tid, NOW - timedelta(minutes=1))
+    session.query(Task).filter(Task.task_id.in_(main[50:])).update(
+        {"modality": "body"}, synchronize_session=False)
+    session.commit()
+    by = row(build_monitor(session, 1, NOW), "P1-ZH-01")["main"]["by_modality"]
+    assert list(by) == ["face", "body", "audio", "text", "audiovisual"]
+    assert by["face"] == {"done": 3, "total": 50}
+    assert by["body"] == {"done": 0, "total": 50}
+    assert by["audio"] == {"done": 0, "total": 0}
