@@ -175,3 +175,89 @@ describe("本地先写、后台同步", () => {
     sync.dispose();
   });
 });
+
+describe("服务器整列表缓存（2026-10-03 整站断开事故）", () => {
+  function counting(submissions: unknown[] = [], attempts: Attempt[] = []) {
+    const remote = fakeRemote();
+    const repo = remote.repository as unknown as Record<string, unknown>;
+    repo.listSubmissions = vi.fn(async () => submissions.slice());
+    repo.listAttempts = vi.fn(async () => attempts.slice());
+    return remote;
+  }
+  const serverSubmission = (id: string, attemptId = "a") => ({
+    submission_id: id, task_id: task.task_id, annotator_id: "A001",
+    attempt_id: attemptId, dimension: "valence", revision: 1,
+    submitted_at: new Date().toISOString(),
+  });
+
+  it("缓存期内反复读列表只打一次服务器", async () => {
+    const remote = counting([serverSubmission("s0")]);
+    let clock = 0;
+    const sync = new SyncingRepository(local(), remote.repository, [1], 1000, () => clock);
+    for (let i = 0; i < 5; i++) {
+      await sync.listSubmissions("A001");
+      await sync.listAttempts("A001");
+    }
+    expect(remote.repository.listSubmissions).toHaveBeenCalledTimes(1);
+    expect(remote.repository.listAttempts).toHaveBeenCalledTimes(1);
+    clock = 1000;
+    await sync.listSubmissions("A001");
+    expect(remote.repository.listSubmissions).toHaveBeenCalledTimes(2);
+  });
+
+  it("提交被服务器确认后立刻出现在已确认列表里，不必重拉", async () => {
+    const remote = counting([]);
+    const store = local();
+    const sync = new SyncingRepository(store, remote.repository, [1], 60_000, () => 0);
+    await sync.listSubmissions("A001");
+    const attempt = fixture();
+    await sync.checkpoint(attempt, [makeSample({ ...attempt, sample_count: 0 }, 0, 0.1)]);
+    (remote.repository.submitWith as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (attemptId: string, submissionId: string) => serverSubmission(submissionId, attemptId),
+    );
+    const mine = await sync.submit(attempt.attempt_id);
+    await sync.drain();
+    const confirmed = await sync.listSubmissions("A001");
+    expect(confirmed.map((row) => row.submission_id)).toEqual([mine.submission_id]);
+    expect(remote.repository.listSubmissions).toHaveBeenCalledTimes(1);
+  });
+
+  it("没被服务器确认的提交不会冒充已确认", async () => {
+    const remote = counting([]);
+    const sync = new SyncingRepository(local(), remote.repository, [1], 60_000, () => 0);
+    const attempt = fixture();
+    await sync.checkpoint(attempt, [makeSample({ ...attempt, sample_count: 0 }, 0, 0.1)]);
+    remote.failNext(100);
+    await sync.submit(attempt.attempt_id);
+    expect(await sync.listSubmissions("A001")).toEqual([]);
+    sync.dispose();
+  });
+
+  it("重拉时服务器不可达，保留上一次读到的轮次", async () => {
+    const other = fixture({ attempt_id: "from-other-device" });
+    const remote = counting([], [other]);
+    let clock = 0;
+    const sync = new SyncingRepository(local(), remote.repository, [1], 1000, () => clock);
+    expect((await sync.listAttempts("A001")).map((a) => a.attempt_id)).toContain("from-other-device");
+    (remote.repository.listAttempts as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("断网"));
+    clock = 5000;
+    expect((await sync.listAttempts("A001")).map((a) => a.attempt_id)).toContain("from-other-device");
+  });
+
+  it("重拉的整列表不会冲掉拉取期间刚确认的提交", async () => {
+    const remote = counting([serverSubmission("old")]);
+    let clock = 0;
+    const sync = new SyncingRepository(local(), remote.repository, [1], 1000, () => clock);
+    await sync.listSubmissions("A001");
+    const attempt = fixture();
+    await sync.checkpoint(attempt, [makeSample({ ...attempt, sample_count: 0 }, 0, 0.1)]);
+    (remote.repository.submitWith as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (attemptId: string, submissionId: string) => serverSubmission(submissionId, attemptId),
+    );
+    const mine = await sync.submit(attempt.attempt_id);
+    await sync.drain();
+    clock = 2000; // 过期重拉，但服务器那份还没有刚确认的这条
+    const ids = (await sync.listSubmissions("A001")).map((row) => row.submission_id);
+    expect(ids).toEqual(expect.arrayContaining(["old", mine.submission_id]));
+  });
+});

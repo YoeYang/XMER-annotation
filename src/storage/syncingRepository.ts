@@ -11,6 +11,15 @@ export interface SyncState {
 }
 
 const DEFAULT_RETRY_MS = [1000, 2000, 5000, 15000, 30000];
+/**
+ * 服务器上两份整列表（轮次、已确认提交）缓存多久才重新拉（2026-10-03）。
+ *
+ * 10.3 整站断过一次：侧栏每次自动保存都整份重拉，一位标了 800 条的人一次
+ * 3.8 MB、服务器 2.5 秒，8 个人一起标就把服务器压垮了。缓存期内只读本机 +
+ * 上次拉到的，加上刚提交时服务器回给我们的那一条——勾照样只认服务器确认过的。
+ * 过期重拉只是为了跟上别的设备上的改动。
+ */
+const DEFAULT_REMOTE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * 本机有、服务器没有的采样点，切成连续的几段。
@@ -56,6 +65,9 @@ export class SyncingRepository implements AnnotationRepository {
   private listeners = new Set<(state: SyncState) => void>();
   /** 服务器确认收到的提交，上一次读取的结果。 */
   private confirmed: Submission[] = [];
+  /** 上一次从服务器读到的轮次（别的设备上标的也在里面）。 */
+  private remoteAttempts: Attempt[] = [];
+  private fetchedAt = { attempts: -Infinity, submissions: -Infinity };
   private state: SyncState = {
     pending: 0,
     syncing: false,
@@ -66,7 +78,24 @@ export class SyncingRepository implements AnnotationRepository {
     private local: AnnotationRepository,
     private remote: HttpRepository,
     private retryMs: number[] = DEFAULT_RETRY_MS,
+    private remoteTtlMs: number = DEFAULT_REMOTE_TTL_MS,
+    private now: () => number = () => Date.now(),
   ) {}
+
+  private stale(which: "attempts" | "submissions") {
+    return this.now() - this.fetchedAt[which] >= this.remoteTtlMs;
+  }
+
+  /** 服务器确认收到的提交，直接记进「已确认」，不必为一个勾整份重拉。 */
+  private confirm(submission: Submission | null | undefined) {
+    if (!submission?.submission_id) return;
+    this.confirmed = [
+      ...this.confirmed.filter(
+        (row) => row.submission_id !== submission.submission_id,
+      ),
+      submission,
+    ];
+  }
 
   getState() {
     return { ...this.state };
@@ -157,7 +186,9 @@ export class SyncingRepository implements AnnotationRepository {
     const submission = await this.local.submit(attemptId);
     // 复用本地生成的编号，重试时服务器视作同一次提交
     this.enqueue(async () => {
-      await this.remote.submitWith(attemptId, submission.submission_id);
+      this.confirm(
+        await this.remote.submitWith(attemptId, submission.submission_id),
+      );
     });
     return submission;
   }
@@ -244,9 +275,11 @@ export class SyncingRepository implements AnnotationRepository {
       )) {
         await this.remote.checkpoint(attempt, run);
       }
-      await this.remote.submitWith(
-        attempt.attempt_id,
-        submission.submission_id,
+      this.confirm(
+        await this.remote.submitWith(
+          attempt.attempt_id,
+          submission.submission_id,
+        ),
       );
       sent += 1;
     }
@@ -291,7 +324,19 @@ export class SyncingRepository implements AnnotationRepository {
   async listAttempts(annotator: string) {
     return this.merged(
       (row) => row.attempt_id,
-      () => this.remote.listAttempts(annotator),
+      async () => {
+        // 缓存期内不碰网络：本机的记录在 merged 里本来就优先
+        if (this.stale("attempts")) {
+          try {
+            this.remoteAttempts = await this.remote.listAttempts(annotator);
+            this.fetchedAt.attempts = this.now();
+          } catch (error) {
+            // 从没拉到过就照旧回落本机；拉到过就用上一次的，别让别处标的凭空消失
+            if (this.fetchedAt.attempts === -Infinity) throw error;
+          }
+        }
+        return this.remoteAttempts;
+      },
       () => this.local.listAttempts(annotator),
     );
   }
@@ -306,8 +351,16 @@ export class SyncingRepository implements AnnotationRepository {
    * 那些不该因为一次网络抖动就从界面上消失，但没确认过的也不能凭空出现。
    */
   async listSubmissions(annotator: string) {
+    if (!this.stale("submissions")) return this.confirmed;
     try {
-      this.confirmed = await this.remote.listSubmissions(annotator);
+      const fresh = await this.remote.listSubmissions(annotator);
+      // 拉取途中刚确认的那几条可能不在这份里，一并留下
+      const known = new Set(fresh.map((row) => row.submission_id));
+      this.confirmed = [
+        ...fresh,
+        ...this.confirmed.filter((row) => !known.has(row.submission_id)),
+      ];
+      this.fetchedAt.submissions = this.now();
     } catch {
       /* 保留上一次的答案 */
     }
