@@ -7,6 +7,15 @@ class Base(DeclarativeBase):
 
 
 def create_db_engine(database_url: str) -> Engine:
+    """Postgres 连接池放宽到 20 + 20、排队 10 秒超时（2026-10-03）。
+
+    10.3 线上连接池（默认 5 + 10）被占满整站断开：标注者每交一维就整份重拉
+    自己的轮次与提交，单次 2.5 秒且一直占着连接。根治在前端（不再整份重拉），
+    这里只是放宽余量；排队等 30 秒不如早点失败，让前端的重试接手。
+    """
+    if database_url.startswith("postgresql"):
+        return create_engine(database_url, future=True, pool_size=20,
+                             max_overflow=20, pool_timeout=10, pool_pre_ping=True)
     return create_engine(database_url, future=True)
 
 

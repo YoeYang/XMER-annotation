@@ -155,6 +155,16 @@ def _latest_submission(
     ).first()
 
 
+def _release(session: Session) -> None:
+    """只读接口查完就把数据库连接还回池子（2026-10-03）。
+
+    整份列表的整理和序列化要 2 秒多，期间不需要数据库；连接一直攥着，8 个人
+    一起标就把池子占满了。读出来的对象已全部加载（expire_on_commit=False），
+    关掉会话后照常可读。
+    """
+    session.close()
+
+
 @router.get("/me", response_model=MeOut)
 def read_me(
     view: str | None = None,
@@ -195,6 +205,8 @@ def read_me(
             )
         )
     )
+    # 查完立刻归还连接，再拼几千条任务（见 _release）
+    _release(session)
     return MeOut(
         annotator_id=annotator.annotator_id,
         display_name=annotator.display_name,
@@ -356,6 +368,7 @@ def list_attempts(
         .where(Attempt.annotator_id == annotator.annotator_id)
         .order_by(Attempt.started_at)
     ).all()
+    _release(session)
     return [AttemptOut.model_validate(r) for r in rows]
 
 
@@ -369,6 +382,7 @@ def list_submissions(
         .where(Submission.annotator_id == annotator.annotator_id)
         .order_by(Submission.submitted_at)
     ).all()
+    _release(session)
     return [SubmissionOut.model_validate(r) for r in rows]
 
 
