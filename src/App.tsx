@@ -20,7 +20,8 @@ import {
   locationOf,
   orderedTasks,
 } from "./core/taskFlow";
-import { API_BASE } from "./config";
+import { API_BASE, resolveAssetPath } from "./config";
+import { assetsOf, createPrefetcher, upcoming } from "./core/prefetch";
 import LangSwitch from "./components/LangSwitch";
 import { useLang } from "./LangContext";
 import type { Key } from "./i18n";
@@ -310,6 +311,15 @@ export default function App() {
   }, [allDone]);
 
   const selectedTask = tasks.find((task) => task.task_id === selected);
+
+  // 标这一条时把后两条的素材先下好，点「下一步」不用等（出口限速，见 core/prefetch）
+  const [prefetcher] = useState(() => createPrefetcher());
+  useEffect(() => {
+    if (!selected || !tasks.length) return;
+    void prefetcher.prefetch(
+      upcoming(tasks, selected).flatMap(assetsOf).map(resolveAssetPath),
+    );
+  }, [selected, tasks, prefetcher]);
   const selectedLocation = selectedTask
     ? locationOf(tasks, selectedTask.task_id)
     : null;
