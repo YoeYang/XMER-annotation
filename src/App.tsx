@@ -22,6 +22,7 @@ import {
 } from "./core/taskFlow";
 import { API_BASE, resolveAssetPath } from "./config";
 import { assetsOf, createPrefetcher, upcoming } from "./core/prefetch";
+import { APP_VERSION, fetchLatestVersion, watchForUpdate } from "./core/version";
 import LangSwitch from "./components/LangSwitch";
 import { useLang } from "./LangContext";
 import type { Key } from "./i18n";
@@ -317,6 +318,26 @@ export default function App() {
 
   const selectedTask = tasks.find((task) => task.task_id === selected);
 
+  // 服务器上有新版本：顶栏下提示，点「下一步」时顺势重新载入（core/version）
+  const [updateReady, setUpdateReady] = useState(false);
+  useEffect(
+    () =>
+      watchForUpdate({
+        current: APP_VERSION,
+        check: () => fetchLatestVersion(resolveAssetPath("/version.json")),
+        onUpdate: () => setUpdateReady(true),
+        doc: document,
+      }),
+    [],
+  );
+  const reloadNow = async () => {
+    try {
+      await activeSession.current?.leave();
+    } finally {
+      location.reload();
+    }
+  };
+
   // 标这一条时把后两条的素材先下好，点「下一步」不用等（出口限速，见 core/prefetch）
   const [prefetcher] = useState(() => createPrefetcher());
   useEffect(() => {
@@ -382,6 +403,12 @@ export default function App() {
           <LangSwitch />
         </div>
       </header>
+      {updateReady && (
+        <div className="update-banner" role="status">
+          <span>{t("update.available")}</span>
+          <button onClick={() => void reloadNow()}>{t("update.reload")}</button>
+        </div>
+      )}
 
       {error && (
         <div className="global-error" role="alert">
@@ -420,7 +447,11 @@ export default function App() {
               const next = tasks[index + 1];
               // 最后一条的「下一个」通向收尾页。从前这里什么也不做，
               // 标完最后一遍的人得不到任何了结的信号。
-              if (next) requestSelect(next);
+              if (next && updateReady) {
+                // 这一条已经提交（本机先落库，重新载入后会补传），换下一条前顺势载入新版本
+                remember("xmer-task", next.task_id);
+                void reloadNow();
+              } else if (next) requestSelect(next);
               else setCelebrating(true);
             }}
             onReload={() => {

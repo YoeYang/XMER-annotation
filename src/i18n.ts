@@ -467,6 +467,12 @@ const S = {
   "app.loadingWorkspace": { en: "Loading your workspace…",
                             zh: "正在读取你的标注工作区…",
                             fi: "Ladataan työtilaasi…" },
+  "update.available": {
+    en: "A new version is available. It will load automatically when you move to the next clip.",
+    zh: "有新版本可用，切到下一条时会自动载入。",
+    fi: "Uusi versio on saatavilla. Se latautuu automaattisesti, kun siirryt seuraavaan leikkeeseen.",
+  },
+  "update.reload": { en: "Reload now", zh: "立即刷新", fi: "Lataa nyt" },
   "app.noTasks": { en: "No tasks assigned yet.",
                    zh: "研究者尚未给你分配任务。",
                    fi: "Sinulle ei ole vielä annettu tehtäviä." },

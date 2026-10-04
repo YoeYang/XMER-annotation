@@ -1521,3 +1521,24 @@ kbd {
 .section-review:hover {
   border-color: var(--teal);
 }
+
+/* 新版本提示（2026-10-05） */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 7px 16px;
+  background: #fff5d6;
+  border-bottom: 1px solid #ecd58a;
+  color: #5c4a12;
+  font-size: 13px;
+}
+.update-banner button {
+  font: inherit;
+  padding: 3px 12px;
+  border-radius: 6px;
+  border: 1px solid #c9a93e;
+  background: #fff;
+  cursor: pointer;
+}
