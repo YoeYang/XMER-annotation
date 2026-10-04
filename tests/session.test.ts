@@ -191,6 +191,60 @@ it("实时轨迹跟着采样长出来，上传后仍然完整", async () => {
     expect(session.view.trace[0]).toHaveProperty("v");
   });
 
+  it("播放中缓冲状态短暂下降、视频照常往前走，这段的点不能丢（10.4 剩余 2% 缺口）", async () => {
+    const { session, media, repository } = setup();
+    await repository.listAttempts("A001");
+    vi.useFakeTimers();
+    await session.prepareDimension("valence", 2);
+    session.press(0.5);
+    await vi.advanceTimersByTimeAsync(HOLD_START_DELAY_MS);
+    for (let cell = 1; cell <= 12; cell++) {
+      // 第 5～7 格时浏览器报「数据不够」（readyState 2），但媒体时间照常前进
+      media.readyState = cell >= 5 && cell <= 7 ? 2 : 4;
+      media.currentTime = cell * 0.1 + 0.01;
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    vi.useRealTimers();
+    session.releaseHold();
+    const cells = session.view.trace.map((p) => Math.round(p.t * 10));
+    const first = cells[0];
+    expect(cells).toEqual(Array.from({ length: 13 - first }, (_, i) => first + i));
+  });
+
+  it("「等待数据」事件到「恢复播放」之间视频还在走，这段照常记点", async () => {
+    const { session, media, repository } = setup();
+    await repository.listAttempts("A001");
+    vi.useFakeTimers();
+    await session.prepareDimension("valence", 2);
+    session.press(0.5);
+    await vi.advanceTimersByTimeAsync(HOLD_START_DELAY_MS);
+    for (let cell = 1; cell <= 12; cell++) {
+      if (cell === 5) media.dispatchEvent(new Event("waiting"));
+      if (cell === 8) media.dispatchEvent(new Event("playing"));
+      media.currentTime = cell * 0.1 + 0.01;
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    vi.useRealTimers();
+    session.releaseHold();
+    const cells = session.view.trace.map((p) => Math.round(p.t * 10));
+    const first = cells[0];
+    expect(cells).toEqual(Array.from({ length: 13 - first }, (_, i) => first + i));
+    expect(session.view.attempt?.events.some((e) => e.type === "buffering")).toBe(true);
+  });
+
+  it("鼠标连续移动只在下一帧通知一次界面，数值立刻是最新的（10.4 慢电脑漏格）", async () => {
+    const { session } = setup();
+    vi.useFakeTimers();
+    let renders = 0;
+    session.subscribe(() => renders++);
+    for (let i = 0; i < 50; i++) session.setValue(i / 100);
+    expect(session.view.value).toBe(0.49);
+    expect(renders).toBe(0);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(renders).toBe(1);
+    vi.useRealTimers();
+  });
+
   it("换维度清空轨迹：上一维的线不能留在图上", async () => {
     const { session, media, repository } = setup();
     await repository.listAttempts("A001");

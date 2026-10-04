@@ -67,13 +67,15 @@ export class AnnotationSession {
       () => ({
         time: this.media?.currentTime ?? 0,
         value: this.view.value ?? 0,
+        // 不看 readyState、缓冲中也照常采（10.4）：限速下浏览器常短暂报「数据不够」
+        // 但画面还在走，原来这段直接不记，留下 0.2–0.4 秒的缺口。真卡住时媒体时间不动，
+        // 本来就不会多记点；暂停与拖动仍不采。
         playing:
           this.holding &&
-          this.view.phase === "recording" &&
+          (this.view.phase === "recording" || this.view.phase === "buffering") &&
           !!this.media &&
           !this.media.paused &&
-          !this.media.seeking &&
-          this.media.readyState >= 3,
+          !this.media.seeking,
       }),
       (time, value, filled) => this.record(time, value, filled),
     );
@@ -84,7 +86,36 @@ export class AnnotationSession {
     return () => this.listeners.delete(listener);
   };
 
+  /**
+   * 高频更新（鼠标移动每秒上百次、每记一个点、进度时钟）合并到下一帧再通知界面（10.4）。
+   *
+   * 原来每次都立刻通知，按住拖动时标注区每秒重画上百次，慢电脑的主线程被占满，
+   * 采样器的轮询就迟到、漏格。数值本身仍立刻更新（采样器读的是 this.view.value），
+   * 只是画面一帧最多画一次，人眼看不出差别。开始、暂停、完成等状态变化仍立刻通知。
+   */
+  private frame: ReturnType<typeof setTimeout> | number | null = null;
+  private emitSoon() {
+    if (this.frame !== null) return;
+    const run = () => {
+      this.frame = null;
+      this.emit();
+    };
+    // 测试跑在 node 里，没有 requestAnimationFrame
+    this.frame =
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame(run)
+        : setTimeout(run, 16);
+  }
+  private cancelFrame() {
+    if (this.frame === null) return;
+    if (typeof cancelAnimationFrame === "function" && typeof this.frame === "number")
+      cancelAnimationFrame(this.frame);
+    else clearTimeout(this.frame as ReturnType<typeof setTimeout>);
+    this.frame = null;
+  }
+
   private emit() {
+    this.cancelFrame();
     this.view = {
       ...this.view,
       attempt: this.view.attempt ? { ...this.view.attempt } : null,
@@ -205,7 +236,7 @@ export class AnnotationSession {
       if (this.view.dimension === null) {
         this.view.phase = "buffering";
       } else if (this.activeAttempt()) {
-        this.sampler.stop();
+        // 不停采样器：等待期间画面常常还在走（见上面 playing 的说明）
         this.view.phase = "buffering";
         this.event("buffering");
         this.persist();
@@ -287,7 +318,7 @@ export class AnnotationSession {
           this.familiarizationLoops +
           Math.min(1, this.media.currentTime / this.view.duration);
       }
-      this.emit();
+      this.emitSoon();
     }, 100);
     this.detach = () => {
       events.forEach(([name, listener]) =>
@@ -413,7 +444,7 @@ export class AnnotationSession {
 
   setValue(value: number) {
     this.view.value = Math.max(-1, Math.min(1, value));
-    this.emit();
+    this.emitSoon();
   }
 
   press(value: number) {
@@ -514,7 +545,7 @@ export class AnnotationSession {
     attempt.sample_count++;
     attempt.last_media_time = time;
     this.version++;
-    this.emit();
+    this.emitSoon();
     if (attempt.sample_count % SAMPLE_RATE_HZ === 0) this.persist();
   }
 
@@ -603,6 +634,7 @@ export class AnnotationSession {
 
   dispose() {
     this.disposed = true;
+    this.cancelFrame();
     this.interrupt("view_closed");
     this.persist();
     this.detach?.();
