@@ -118,7 +118,11 @@ rsync -a --delete -e "ssh -i ~/.ssh/xmer_ecs" dist/ \
 curl -sk https://47.238.255.165.nip.io/annotation/ | grep -o 'src="[^"]*"'   # 必须是 /annotation/assets/...
 ```
 
-漏了 `VITE_BASE_PATH` 整页白屏。前端测试同一个容器里跑：`npx vitest run && npx tsc --noEmit`。
+漏了 `VITE_BASE_PATH` 整页白屏。
+
+**自动更新（2026-10-05 起）**：每次构建生成新版本号，写进代码和 `dist/version.json`。已打开的页面每 5 分钟
+（及切回标签页时）检查一次，发现新版本就显示提示条，并在标注者点「下一步」时自动重新载入。
+所以**每部署一次前端，所有人都会在下一条时刷新一次**——别为了无关紧要的改动频繁部署。前端测试同一个容器里跑：`npx vitest run && npx tsc --noEmit`。
 
 ## 回滚
 
