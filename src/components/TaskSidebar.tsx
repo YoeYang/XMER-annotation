@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -42,7 +42,7 @@ const icons: Record<Modality, typeof Headphones> = {
   audiovisual: Film,
 };
 
-export default function TaskSidebar({
+function TaskSidebar({
   tasks,
   selected,
   annotator,
@@ -235,3 +235,6 @@ export default function TaskSidebar({
     </aside>
   );
 }
+
+// 同步状态每秒都在变，App 跟着重渲染；目录有几千行，内容没变就别重画（2026-10-04 丢点事故）
+export default memo(TaskSidebar);

@@ -75,7 +75,7 @@ export class AnnotationSession {
           !this.media.seeking &&
           this.media.readyState >= 3,
       }),
-      (time, value) => this.record(time, value),
+      (time, value, filled) => this.record(time, value, filled),
     );
   }
 
@@ -502,14 +502,14 @@ export class AnnotationSession {
     this.holdTimer = null;
   }
 
-  private record(time: number, value: number) {
+  private record(time: number, value: number, filled = false) {
     const attempt = this.view.attempt;
     if (
       !attempt ||
       (attempt.sample_count > 0 && time <= attempt.last_media_time)
     )
       return;
-    this.pending.push(makeSample(attempt, time, value));
+    this.pending.push(makeSample(attempt, time, value, filled));
     this.trace.push({ t: time, v: value });
     attempt.sample_count++;
     attempt.last_media_time = time;

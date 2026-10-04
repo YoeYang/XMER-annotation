@@ -85,11 +85,6 @@ export default function Workspace(props: Props) {
       void session.prepareDimension(initialPage, initialPlays);
   }, []);
 
-  useEffect(() => {
-    if (view.savedAt)
-      void props.refresh().catch((error) => setNotice(String(error)));
-  }, [view.savedAt]);
-
   const run = async (operation: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);

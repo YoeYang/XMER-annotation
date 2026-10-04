@@ -45,6 +45,8 @@ export interface Sample {
   wall_time: string;
   value: number;
   is_valid: boolean;
+  /** 主线程卡顿跳格时补记的点（按前后实测点线性插值），2026-10-04 起 */
+  filled?: boolean;
 }
 export interface SessionEvent {
   index: number;

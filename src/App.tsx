@@ -109,15 +109,16 @@ export default function App() {
 
   useEffect(() => {
     setSync(repository.getState());
-    // 上传队列排空时重新读一次：侧栏的勾只认服务器确认收到的提交，
+    // 服务器每确认一次提交就重读一次：侧栏的勾只认服务器确认收到的提交，
     // 而提交是不等上传就返回的（等一次网络往返会让「下一步」卡住）。
-    // 没有这一下，勾要等到下次手动触发刷新才会出现。
-    let pending = repository.getState().pending;
+    // 不能「上传队列一清空就读」：按住标注时每秒都在传采样块，那样每秒读一次
+    // 全部记录、重绘整个目录，标得越多越卡，卡了采样就丢点（10.4）。
+    let confirmations = repository.getState().confirmations;
     return repository.subscribe((state) => {
       setSync(state);
-      const settled = pending > 0 && state.pending === 0;
-      pending = state.pending;
-      if (settled && annotator) void refresh();
+      const confirmed = state.confirmations !== confirmations;
+      confirmations = state.confirmations;
+      if (confirmed && annotator) void refresh();
     }) as unknown as () => void;
   }, [repository, annotator, refresh]);
 
@@ -245,6 +246,10 @@ export default function App() {
     }
     void performSelect(task);
   };
+  // 给目录的回调保持同一个引用，目录才能跳过无关的重渲染；调用时总是用最新的 requestSelect
+  const selectRef = useRef(requestSelect);
+  selectRef.current = requestSelect;
+  const stableSelect = useCallback((task: Task) => selectRef.current(task), []);
 
   useEffect(() => {
     if (!pendingTask) return;
@@ -394,7 +399,7 @@ export default function App() {
             attempts={attempts}
             submissions={submissions}
             disabled={switching}
-            onSelect={requestSelect}
+            onSelect={stableSelect}
             onReview={training ? setReviewing : undefined}
           />
           <Workspace

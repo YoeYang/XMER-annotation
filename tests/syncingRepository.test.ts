@@ -261,3 +261,27 @@ describe("服务器整列表缓存（2026-10-03 整站断开事故）", () => {
     expect(ids).toEqual(expect.arrayContaining(["old", mine.submission_id]));
   });
 });
+
+describe("只在服务器确认提交时通知界面重读（2026-10-04 丢点事故）", () => {
+  it("传采样块不算确认，提交被确认才加一", async () => {
+    const remote = fakeRemote();
+    const sync = new SyncingRepository(local(), remote.repository, [1], 60_000, () => 0);
+    const seen: number[] = [];
+    sync.subscribe((state) => seen.push(state.confirmations));
+    const attempt = fixture();
+    await sync.checkpoint(attempt, [makeSample({ ...attempt, sample_count: 0 }, 0, 0.1)]);
+    await sync.drain();
+    expect(sync.getState().confirmations).toBe(0);
+    (remote.repository.submitWith as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (attemptId: string, submissionId: string) => ({
+        submission_id: submissionId, task_id: task.task_id, annotator_id: "A001",
+        attempt_id: attemptId, revision: 1, previous_submission_id: null,
+        submitted_at: new Date().toISOString(), updated_at: null,
+      }),
+    );
+    await sync.submit(attempt.attempt_id);
+    await sync.drain();
+    expect(sync.getState().confirmations).toBe(1);
+    expect(seen.at(-1)).toBe(1);
+  });
+});

@@ -267,3 +267,76 @@ describe("时长校验留 1 毫秒容差", () => {
     expect(() => validateTranscript(doc(3.72), 3.718)).toThrow();
   });
 });
+
+describe("主线程卡顿时补记跳过的格子（2026-10-04 丢点事故）", () => {
+  /** 手动驱动：每次 tick 推进媒体时间并采一次，模拟浏览器卡住时两次轮询间隔变长。 */
+  function rig(value: (t: number) => number) {
+    let time = 0;
+    const got: { time: number; value: number; filled: boolean }[] = [];
+    const sampler = new Sampler(
+      10,
+      () => ({ time, value: value(time), playing: true }),
+      (t, v, filled = false) => got.push({ time: +t.toFixed(3), value: +v.toFixed(3), filled }),
+    );
+    return { got, sampler, at: (t: number) => { time = t; sampler.capture(); } };
+  }
+
+  it("卡住 0.3 秒跳过的两格按前后两点线性补上，并标为补记", () => {
+    const { got, at } = rig((t) => t);          // 值随时间线性上升
+    at(0.0); at(0.1);
+    at(0.42);                                   // 卡了：直接从 0.1 格跳到 0.4 格
+    expect(got.map((s) => s.time)).toEqual([0, 0.1, 0.2, 0.3, 0.4]);
+    expect(got.map((s) => s.filled)).toEqual([false, false, true, true, false]);
+    // 0.1 格记的是 0.1，0.4 格记的是 0.42；中间按格子位置线性分
+    expect(got[2].value).toBeCloseTo(0.1 + (0.42 - 0.1) / 3, 3);
+    expect(got[3].value).toBeCloseTo(0.1 + (2 * (0.42 - 0.1)) / 3, 3);
+  });
+
+  it("正常播放不补记", () => {
+    const { got, at } = rig(() => 0.5);
+    for (let i = 0; i <= 10; i++) at(i * 0.1 + 0.01);
+    expect(got.every((s) => !s.filled)).toBe(true);
+    expect(got.length).toBe(11);
+  });
+
+  it("跳得太远（超过 2 秒，像是跳转而不是卡顿）不补", () => {
+    const { got, at } = rig(() => 0);
+    at(0.0); at(3.05);
+    expect(got.map((s) => s.time)).toEqual([0, 3]);
+  });
+
+  it("第一格之前不补", () => {
+    const { got, at } = rig(() => 0);
+    at(0.55);
+    expect(got.map((s) => s.time)).toEqual([0.5]);
+  });
+
+  it("暂停、缓冲或拖动之后恢复，不跨着补", () => {
+    let time = 0, playing = true;
+    const got: number[] = [];
+    const sampler = new Sampler(10, () => ({ time, value: 0, playing }), (t) => got.push(+t.toFixed(3)));
+    sampler.capture();                    // 0
+    playing = false; time = 0.55; sampler.capture();
+    playing = true; sampler.capture();    // 恢复时已在 0.5 格
+    expect(got).toEqual([0, 0.5]);
+  });
+
+  it("松开再按住（stop / start）之间的跳动不补", () => {
+    let time = 0;
+    const got: number[] = [];
+    const sampler = new Sampler(10, () => ({ time, value: 0, playing: true }), (t) => got.push(+t.toFixed(3)));
+    sampler.capture();
+    sampler.stop();
+    time = 0.45;
+    sampler.capture();
+    expect(got).toEqual([0, 0.4]);
+  });
+
+  it("reset 之后重新开始，不跨着补", () => {
+    const { got, sampler, at } = rig(() => 0);
+    at(0.0); at(0.1);
+    sampler.reset();
+    at(0.5);
+    expect(got.map((s) => s.time)).toEqual([0, 0.1, 0.5]);
+  });
+});

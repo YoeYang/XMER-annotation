@@ -8,6 +8,12 @@ export interface SyncState {
   syncing: boolean;
   lastError: string | null;
   lastSyncedAt: string | null;
+  /**
+   * 服务器确认过多少次提交（2026-10-04）。界面只在它变了时才重读列表、打勾——
+   * 原来是「上传队列一清空就重读」，而按住标注时每秒都在传采样块、每秒都清空一次，
+   * 标得越多读得越重，主线程一卡采样就丢点。
+   */
+  confirmations: number;
 }
 
 const DEFAULT_RETRY_MS = [1000, 2000, 5000, 15000, 30000];
@@ -73,6 +79,7 @@ export class SyncingRepository implements AnnotationRepository {
     syncing: false,
     lastError: null,
     lastSyncedAt: null,
+    confirmations: 0,
   };
   constructor(
     private local: AnnotationRepository,
@@ -89,6 +96,7 @@ export class SyncingRepository implements AnnotationRepository {
   /** 服务器确认收到的提交，直接记进「已确认」，不必为一个勾整份重拉。 */
   private confirm(submission: Submission | null | undefined) {
     if (!submission?.submission_id) return;
+    this.state.confirmations += 1;
     this.confirmed = [
       ...this.confirmed.filter(
         (row) => row.submission_id !== submission.submission_id,
