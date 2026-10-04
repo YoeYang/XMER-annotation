@@ -30,6 +30,13 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 
 踩过一次：`docker compose up -d caddy` 对纯配置改动是 no-op，容器不重建，内存里还是旧路由。
 
+## 压缩（2026-10-04 起）
+
+`handle /annotation/api/*` 与 `handle_path /annotation*`（前端静态页）里加了 `encode zstd gzip`。
+香港出站按流量计费，接口整列表 3–4 MB，压缩后约十分之一（实测 attempts 3.1 MB → 0.33 MB）。
+**素材目录 `/annotation/pool/*` 不压缩**：mp4/m4a 本身已压缩，且要保证 Range 分段加载不受影响。
+改前配置备份为 `Caddyfile.bak-encode-20261004`。
+
 ## 配置与密钥
 
 `/opt/xmer-label/.env.annotation`（chmod 600，**不在 git 里**）：
