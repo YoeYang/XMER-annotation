@@ -37,6 +37,11 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 **素材目录 `/annotation/pool/*` 不压缩**：mp4/m4a 本身已压缩，且要保证 Range 分段加载不受影响。
 改前配置备份为 `Caddyfile.bak-encode-20261004`。
 
+**素材长期缓存（2026-10-04）**：`/annotation/pool/*` 加 `Cache-Control: public, max-age=604800, immutable`，
+配合前端预下载后两条（`src/core/prefetch.ts`）。出口实测限速约 5 Mbps（阿里云风控不让加带宽）。
+**素材不会原地改**；若要重做，换路径（如 `v4/`）而不是覆盖，否则浏览器会用 7 天内的旧缓存。
+备份 `Caddyfile.bak-cache-20261004`。
+
 ## 配置与密钥
 
 `/opt/xmer-label/.env.annotation`（chmod 600，**不在 git 里**）：
