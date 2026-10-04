@@ -10,6 +10,7 @@
   assign-training    按语言给正式账号挂训练分配（训练与正式同一个账号）
   mirror-queue       把标注者的队列照抄给管理员镜像号（界面检查用）
   plan-anchors       给参考账号排一份补标锚点的队列（标注者队列不动）
+  transfer           有人退出：把他没标完的分配转给接手者，可顺带停用原账号
   set-language       给账号打语言标签（zh 表示中英都能读）
   import-reference   把某个账号的标注导入参考曲线表，供训练页对照
   status             查看账号与分配现状
@@ -38,6 +39,7 @@ from app.assignments import (
     purge_annotator,
     replace_assignments,
     tasks_by_sample_modality,
+    transfer_unfinished,
 )
 from app.auth import hash_token, new_token
 from app.completion import latest_submissions
@@ -453,6 +455,25 @@ def cmd_plan_anchors(args):
     print("每人新增锚点：" + "、".join(f"{a} {n}" for a, n in sorted(load.items())))
 
 
+def cmd_transfer(args):
+    """有人退出换人（2026-10-04）：未完成的分配原样转给接手者，见 transfer_unfinished。"""
+    factory = session_factory()
+    with factory() as session:
+        try:
+            event, moved = transfer_unfinished(session, args.source, args.to, args.reason,
+                                               args.phase)
+        except ValueError as error:
+            session.rollback()
+            sys.exit(str(error))
+        if args.deactivate:
+            session.get(Annotator, args.source).active = False
+        session.commit()
+        kept = event.detail["kept_done"]
+    print(f"{args.source} → {args.to}：转出 {moved} 条（{args.phase}），"
+          f"{args.source} 名下保留已完成 {kept} 条；事件 #{event.event_id}"
+          + ("；原账号已停用" if args.deactivate else ""))
+
+
 def cmd_apply_plan(args):
     with Path(args.plan).open(encoding="utf-8", newline="") as handle:
         plan = list(csv.DictReader(handle))
@@ -847,6 +868,14 @@ def main():
     anchors.add_argument("--size", type=int, default=300)
     anchors.add_argument("--seed", type=int, default=0)
     anchors.set_defaults(func=cmd_plan_anchors)
+
+    transfer = sub.add_parser("transfer", help="把某人未完成的分配转给接手者")
+    transfer.add_argument("--from", dest="source", required=True)
+    transfer.add_argument("--to", required=True)
+    transfer.add_argument("--reason", required=True)
+    transfer.add_argument("--phase", default="main")
+    transfer.add_argument("--deactivate", action="store_true", help="同时停用原账号（旧链接失效）")
+    transfer.set_defaults(func=cmd_transfer)
 
     training = sub.add_parser("assign-training", help="按语言给正式账号挂训练分配")
     training.add_argument("--stage", type=int, required=True)

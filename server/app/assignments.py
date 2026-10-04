@@ -7,10 +7,12 @@ V3 起分配以**子任务**（样本 × 模态）为单位。V2 时是一行一
 """
 
 import random
+from datetime import datetime, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from .config import DIMENSIONS, ZH_ONLY_DATASETS, ZH_ONLY_MODALITIES, dataset_of
 from .models import (
     Annotator,
     AnnotatorProfile,
@@ -162,6 +164,76 @@ def replace_assignments(
         )
         written += 1
     return written, missing
+
+
+def transfer_unfinished(
+    session: Session, source_id: str, target_id: str, reason: str, phase: str = "main"
+) -> tuple[AssignmentEvent, int]:
+    """把 `source_id` 在 `phase` 阶段**没标完**的分配整体转给 `target_id`（2026-10-04）。
+
+    只追加、不删改：原分配标 released、挂上本次事件；接手者按原顺序新建分配，
+    `replaces_assignment_id` 指回原行。两维都交了的留在原账号名下；只交了一维的
+    也转走（接手者两维都要重标，原账号那一维的提交照常保留在库里）。
+
+    拒绝的情况：账号不存在、转给自己、接手者语言接不了其中的中文专属子任务、
+    接手者已经有其中某条（违反「同一人不重复同一子任务」）。
+    """
+    if source_id == target_id:
+        raise ValueError("不能转给自己。")
+    source, target = session.get(Annotator, source_id), session.get(Annotator, target_id)
+    if source is None or target is None:
+        raise ValueError(f"账号不存在：{source_id if source is None else target_id}")
+
+    done = {
+        task_id for task_id, n in session.execute(
+            select(Submission.task_id, func.count(func.distinct(Submission.dimension)))
+            .where(Submission.annotator_id == source_id)
+            .group_by(Submission.task_id))
+        if n >= len(DIMENSIONS)
+    }
+    rows = [
+        row for row in session.scalars(
+            select(Assignment)
+            .where(Assignment.annotator_id == source_id, Assignment.phase == phase,
+                   Assignment.status == "active")
+            .order_by(Assignment.order_index))
+        if row.task_id not in done
+    ]
+    if not rows:
+        raise ValueError(f"{source_id} 在 {phase} 阶段没有未完成的分配可转。")
+
+    tasks = {t.task_id: t for t in session.scalars(
+        select(Task).where(Task.task_id.in_([r.task_id for r in rows])))}
+    if target.language != "zh":
+        zh_only = [r.task_id for r in rows
+                   if tasks[r.task_id].modality in ZH_ONLY_MODALITIES
+                   and dataset_of(tasks[r.task_id].source_id) in ZH_ONLY_DATASETS]
+        if zh_only:
+            raise ValueError(f"{target_id} 不是中文标注者，接不了 {len(zh_only)} 条中文专属子任务，"
+                             f"如 {zh_only[:3]}")
+    held = set(session.scalars(
+        select(Assignment.task_id).where(Assignment.annotator_id == target_id,
+                                         Assignment.phase == phase)))
+    clash = [r.task_id for r in rows if r.task_id in held]
+    if clash:
+        raise ValueError(f"{target_id} 已经有其中 {len(clash)} 条，如 {clash[:3]}；"
+                         "同一人不能重复同一子任务。")
+
+    now = datetime.now(timezone.utc)
+    event = AssignmentEvent(kind="transfer", annotator_id=source_id, reason=reason,
+                            detail={"to": target_id, "phase": phase, "count": len(rows),
+                                    "kept_done": len(done)})
+    session.add(event)
+    session.flush()
+    start = (session.scalar(
+        select(func.max(Assignment.order_index))
+        .where(Assignment.annotator_id == target_id, Assignment.phase == phase)) or -1) + 1
+    for i, row in enumerate(rows):
+        row.status, row.released_at, row.release_event_id = "released", now, event.event_id
+        session.add(Assignment(annotator_id=target_id, task_id=row.task_id, phase=phase,
+                               order_index=start + i, is_anchor=row.is_anchor,
+                               replaces_assignment_id=row.assignment_id))
+    return event, len(rows)
 
 
 # 占位符而非人名，来自 mustard 等数据集的原始元数据。

@@ -162,6 +162,8 @@ def build_monitor(session: Session, stage: int, now: datetime) -> dict:
         rows.append({
             "annotator_id": aid,
             "language": annotator.language,
+            # 退出换人后停用的账号：面板标「已停用」，提醒脚本跳过
+            "active": annotator.active,
             "state": state,
             "first_activity": _iso(_utc(first_seen[aid]) if aid in first_seen else None),
             "last_activity": _iso(last),

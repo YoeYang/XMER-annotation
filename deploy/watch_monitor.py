@@ -37,7 +37,8 @@ def events(old: dict, new: dict) -> list[str]:
     said = []
     for aid, r in new.items():
         o = old.get(aid)
-        if o is None:
+        # 停用的账号（退出换人）不再报：转出后剩下的全是已完成，百分比会一下跳到 100%
+        if o is None or r.get("active") is False:
             continue
         if o["state"] == "not_started" and r["state"] != "not_started":
             said.append(f"{aid} 开始训练了")

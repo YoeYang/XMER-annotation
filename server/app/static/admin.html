@@ -317,7 +317,8 @@ async function loadMonitor() {
         : `<span class='idle'>数据不足</span>${p.needed_per_day ? `<small>需 ${p.needed_per_day} 条/天</small>` : ""}`;
       return `<tr>
         <td><strong>${r.annotator_id}</strong></td>
-        <td><span class="st st-${r.state}">${STATE[r.state] || r.state}</span></td>
+        <td>${r.active === false ? "<span class='st st-not_started'>已停用</span>"
+              : `<span class="st st-${r.state}">${STATE[r.state] || r.state}</span>`}</td>
         <td class="num">${r.training.done} / ${r.training.total}${r.training.trained_at ? `<small>${when(r.training.trained_at)}</small>` : ""}</td>
         <td><div class="prog"><div class="track"><div class="fill" style="width:${r.main.percent}%"></div></div>
             <span class="num">${r.main.done} / ${r.main.total}</span></div></td>
