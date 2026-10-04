@@ -191,14 +191,14 @@ def transfer_unfinished(
             .group_by(Submission.task_id))
         if n >= len(DIMENSIONS)
     }
-    rows = [
-        row for row in session.scalars(
-            select(Assignment)
-            .where(Assignment.annotator_id == source_id, Assignment.phase == phase,
-                   Assignment.status == "active")
-            .order_by(Assignment.order_index))
-        if row.task_id not in done
-    ]
+    queue = list(session.scalars(
+        select(Assignment)
+        .where(Assignment.annotator_id == source_id, Assignment.phase == phase,
+               Assignment.status == "active")
+        .order_by(Assignment.order_index)))
+    # 只算这一阶段队列里的：训练子任务也有提交，混进来会把「保留已完成」算多
+    done = {row.task_id for row in queue} & done
+    rows = [row for row in queue if row.task_id not in done]
     if not rows:
         raise ValueError(f"{source_id} 在 {phase} 阶段没有未完成的分配可转。")
 

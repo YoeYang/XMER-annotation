@@ -161,3 +161,12 @@ def test_monitor_marks_deactivated_account(world):
     world.commit()
     rows = {r["annotator_id"]: r for r in build_monitor(world, 1, NOW)["annotators"]}
     assert rows["P1-EN-03"]["active"] is False
+
+
+def test_kept_done_counts_only_this_phase(world):
+    """10.4 线上：EN-03 正式只完成 6 条，事件却记「保留已完成 17 条」——把训练也算进去了。"""
+    submit(world, "P1-EN-03", "TR::face", "valence")
+    submit(world, "P1-EN-03", "TR::face", "arousal")
+    world.commit()
+    event, _ = transfer_unfinished(world, "P1-EN-03", "P1-EN-08", "退出")
+    assert event.detail["kept_done"] == 1
