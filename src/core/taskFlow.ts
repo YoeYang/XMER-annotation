@@ -92,14 +92,42 @@ export function taskComplete(
   );
 }
 
+/**
+ * 两个维度的最新一轮都已提交的子任务，一次遍历算完（2026-10-05）。
+ *
+ * 结果与对每条任务调 taskComplete 完全一样（同一任务同一维度取 started_at 最晚、
+ * 并列取后出现的那轮），但不再是「每条任务都把全部轮次和提交扫一遍」——一个人标到
+ * 两千条时那要几千万次运算，主线程一卡就是零点几秒，采样器跟着漏格。
+ */
+export function completedTaskIds(
+  attempts: Attempt[],
+  submissions: Submission[],
+): Set<string> {
+  const latest = new Map<string, Attempt>();
+  for (const attempt of attempts) {
+    const key = attempt.task_id + "\u0000" + attempt.dimension;
+    const current = latest.get(key);
+    if (!current || attempt.started_at.localeCompare(current.started_at) >= 0)
+      latest.set(key, attempt);
+  }
+  const submitted = new Set(submissions.map((row) => row.attempt_id));
+  const halves = new Map<string, number>();
+  for (const attempt of latest.values()) {
+    if (!submitted.has(attempt.attempt_id)) continue;
+    if (attempt.dimension !== "valence" && attempt.dimension !== "arousal") continue;
+    halves.set(attempt.task_id, (halves.get(attempt.task_id) ?? 0) + 1);
+  }
+  return new Set([...halves].filter(([, n]) => n === 2).map(([id]) => id));
+}
+
 /** 已完成的子任务数。两个维度都提交才算一条。 */
 export function completedCount(
   tasks: Task[],
   attempts: Attempt[],
   submissions: Submission[],
 ) {
-  return tasks.filter((task) => taskComplete(attempts, submissions, task.task_id))
-    .length;
+  const done = completedTaskIds(attempts, submissions);
+  return tasks.filter((task) => done.has(task.task_id)).length;
 }
 
 /**
@@ -127,12 +155,9 @@ export function completeModalities(
   attempts: Attempt[],
   submissions: Submission[],
 ): Modality[] {
+  const done = completedTaskIds(attempts, submissions);
   return buildTaskSections(tasks)
-    .filter((section) =>
-      section.tasks.every((row) =>
-        taskComplete(attempts, submissions, row.task.task_id),
-      ),
-    )
+    .filter((section) => section.tasks.every((row) => done.has(row.task.task_id)))
     .map((section) => section.modality);
 }
 

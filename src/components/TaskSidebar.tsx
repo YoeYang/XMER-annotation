@@ -16,7 +16,7 @@ import type { Key } from "../i18n";
 import {
   buildTaskSections,
   locationOf,
-  taskComplete,
+  completedTaskIds,
   ticketId,
   MODALITY_ORDER,
 } from "../core/taskFlow";
@@ -68,8 +68,12 @@ function TaskSidebar({
   }, [selectedTask?.modality]);
 
   const { t } = useLang();
-  const done = (task: Task) =>
-    taskComplete(attempts, submissions, task.task_id);
+  // 先整理成集合再查：原来每条任务都把全部记录扫一遍，标得多了主线程一卡就漏点（10.5）
+  const doneSet = useMemo(
+    () => completedTaskIds(attempts, submissions),
+    [attempts, submissions],
+  );
+  const done = (task: Task) => doneSet.has(task.task_id);
   const doneCount = tasks.filter(done).length;
   const selectedLocation = selectedTask
     ? locationOf(tasks, selectedTask.task_id)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   BookOpen,
@@ -14,7 +14,6 @@ import type { SyncState } from "./storage/syncingRepository";
 import { captureToken, getToken } from "./auth";
 import { validateTasks } from "./core/textTimeline";
 import {
-  allComplete,
   completeModalities,
   completedCount,
   locationOf,
@@ -305,8 +304,12 @@ export default function App() {
     setReviewing(fresh);
   }, [finished.join(","), training, reviewedKey, book]);
 
-  const doneCount = completedCount(tasks, attempts, submissions);
-  const allDone = allComplete(tasks, attempts, submissions);
+  // 只在任务或记录变了时重算：App 随同步状态每秒都在重渲染（10.5 卡顿修复）
+  const doneCount = useMemo(
+    () => completedCount(tasks, attempts, submissions),
+    [tasks, attempts, submissions],
+  );
+  const allDone = tasks.length > 0 && doneCount === tasks.length;
 
   // 从「还差一点」翻到「全齐了」的那一刻自动弹收尾页。挂在 allDone 上而不是
   // 提交回调上：勾以服务端为准，等云端确认之后再庆祝才不会庆祝一场空。
