@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600">
+  <defs><radialGradient id="glow"><stop stop-color="#527a62"/><stop offset="1" stop-color="#172e26"/></radialGradient><linearGradient id="line"><stop stop-color="#a9b78b" stop-opacity="0"/><stop offset=".5" stop-color="#c5d2ac"/><stop offset="1" stop-color="#a9b78b" stop-opacity="0"/></linearGradient></defs>
+  <rect width="960" height="600" fill="#162c24"/>
+  <ellipse cx="480" cy="280" rx="410" ry="290" fill="url(#glow)" opacity=".6"/>
+  <g fill="none" stroke="#a8bc93" opacity=".15"><circle cx="480" cy="270" r="85"/><circle cx="480" cy="270" r="127"/><circle cx="480" cy="270" r="172"/><path d="M100 270H860M480 70V465" stroke-dasharray="3 8"/></g>
+  <g fill="none" stroke="url(#line)" stroke-width="2"><path d="M70 270H240L270 256 290 280 310 239 330 296 350 224 370 301 390 213 410 316 430 235 450 296 470 190 490 338 510 217 530 302 550 239 570 285 590 259 610 279 630 264 650 274H890"/></g>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" text-anchor="middle"><text x="480" y="423" font-size="17" fill="#c0cdb3" letter-spacing="8">CPM · SAMPLE PREVIEW</text><text x="480" y="462" font-size="13" fill="#7c9680" letter-spacing="3">合成视听演示素材</text></g>
+  <g fill="#849f7a" opacity=".6"><circle cx="452" cy="518" r="2"/><circle cx="480" cy="518" r="2"/><circle cx="508" cy="518" r="2"/></g>
+</svg>
